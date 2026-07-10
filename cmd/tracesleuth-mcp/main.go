@@ -24,7 +24,6 @@ import (
 	"log"
 	"os"
 
-	"tracesleuth/internal/catalog"
 	"tracesleuth/internal/service"
 	"tracesleuth/internal/transport"
 )
@@ -46,7 +45,18 @@ func main() {
 	if host == "" {
 		host, _ = os.Hostname()
 	}
-	svc, err := service.New(service.Config{DataDir: data, Host: host, Catalog: catalog.Default()})
+
+	// Catalog + policy are managed WITHOUT recompiling: TRACESLEUTH_CATALOG points
+	// at a JSON catalog (caps, high-frequency set, deny-lists) and TRACESLEUTH_POLICY
+	// at a Rego file. Both fall back to the built-ins compiled into the binary. The
+	// same loader backs tracectl, so every entry point enforces identically.
+	cat, engine, err := service.PolicyFromEnv()
+	if err != nil {
+		log.Fatalf("policy: %v", err)
+	}
+	log.Printf("policy engine ready (bundle %s)", cat.BundleVersion)
+
+	svc, err := service.New(service.Config{DataDir: data, Host: host, Catalog: cat, Policy: engine})
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}

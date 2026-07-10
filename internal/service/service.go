@@ -37,6 +37,9 @@ type Config struct {
 	Host     string // this host's name, recorded on every investigation
 	Executor exec.Executor
 	Catalog  catalog.Catalog
+	// Policy is the OPA decision engine. If nil, New builds one from the embedded
+	// policy and Catalog.AsData() — the built-in default-allow + deny-list posture.
+	Policy *policy.Engine
 }
 
 // Service is safe for sequential CLI use; concurrent investigations get their
@@ -46,6 +49,35 @@ type Service struct {
 	logsDir string
 	outDir  string
 	store   *store.Store
+}
+
+// PolicyFromEnv loads the catalog (TRACESLEUTH_CATALOG, JSON) and policy module
+// (TRACESLEUTH_POLICY, Rego) from disk, each falling back to the built-in
+// compiled default, and returns the catalog plus a compiled engine. Both the MCP
+// server and tracectl call this so they enforce byte-for-byte the same policy —
+// changing the files (no recompile) affects every entry point at once.
+func PolicyFromEnv() (catalog.Catalog, *policy.Engine, error) {
+	cat := catalog.Default()
+	if p := os.Getenv("TRACESLEUTH_CATALOG"); p != "" {
+		loaded, err := catalog.Load(p)
+		if err != nil {
+			return cat, nil, fmt.Errorf("load catalog %s: %w", p, err)
+		}
+		cat = loaded
+	}
+	module := "" // empty => embedded default policy
+	if p := os.Getenv("TRACESLEUTH_POLICY"); p != "" {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return cat, nil, fmt.Errorf("load policy %s: %w", p, err)
+		}
+		module = string(b)
+	}
+	eng, err := policy.NewEngine(context.Background(), module, cat.AsData(), cat.BundleVersion)
+	if err != nil {
+		return cat, nil, fmt.Errorf("policy engine: %w", err)
+	}
+	return cat, eng, nil
 }
 
 // New opens the index and ensures the directory layout exists.
@@ -73,6 +105,13 @@ func New(cfg Config) (*Service, error) {
 	}
 	if cfg.Catalog.BundleVersion == "" {
 		cfg.Catalog = catalog.Default()
+	}
+	if cfg.Policy == nil {
+		eng, err := policy.NewEngine(context.Background(), "", cfg.Catalog.AsData(), cfg.Catalog.BundleVersion)
+		if err != nil {
+			return nil, fmt.Errorf("build policy engine: %w", err)
+		}
+		cfg.Policy = eng
 	}
 	return &Service{cfg: cfg, logsDir: logsDir, outDir: outDir, store: st}, nil
 }
@@ -202,7 +241,16 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 			RunningOnHost: s.runningOnHost(),
 		},
 	}
-	dec := policy.Evaluate(in, s.cfg.Catalog)
+	dec, err := s.cfg.Policy.Evaluate(ctx, in)
+	if err != nil {
+		// Evaluation failure denies (fail closed) and is recorded like any denial.
+		reason := fmt.Sprintf("policy evaluation error: %v", err)
+		if _, e := s.recordDecision(invID, probeID, false, []string{reason}); e != nil {
+			return rep, e
+		}
+		rep.Decision, rep.Reasons = "deny", []string{reason}
+		return rep, nil
+	}
 	if _, err := s.recordDecision(invID, probeID, dec.Allow, dec.Reasons); err != nil {
 		return rep, err
 	}

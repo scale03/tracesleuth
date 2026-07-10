@@ -87,13 +87,19 @@ global: --data DIR (default ./data), --host NAME (default hostname)
 `)
 }
 
-// svc constructs a Service from the shared --data/--host flags.
+// svc constructs a Service from the shared --data/--host flags. Catalog and
+// policy come from the same TRACESLEUTH_CATALOG/TRACESLEUTH_POLICY loader the MCP
+// server uses, so the CLI enforces identical policy.
 func svc(fs *flag.FlagSet, data, host *string) (*service.Service, error) {
 	if *host == "" {
 		h, _ := os.Hostname()
 		*host = h
 	}
-	return service.New(service.Config{DataDir: *data, Host: *host, Catalog: catalog.Default()})
+	cat, engine, err := service.PolicyFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return service.New(service.Config{DataDir: *data, Host: *host, Catalog: cat, Policy: engine})
 }
 
 func stdFlags(fs *flag.FlagSet) (data, host *string) {
