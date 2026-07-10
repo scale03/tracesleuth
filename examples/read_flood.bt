@@ -1,0 +1,1 @@
+tracepoint:syscalls:sys_enter_read { printf("%d read\n", pid); }

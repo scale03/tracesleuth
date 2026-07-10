@@ -1,0 +1,2 @@
+kprobe:tcp_connect { @start[tid] = nsecs; }
+kretprobe:tcp_connect { @lat_ns = hist(nsecs - @start[tid]); delete(@start[tid]); }
