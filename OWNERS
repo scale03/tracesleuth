@@ -1,0 +1,6 @@
+# Maintainers of TraceSleuth. See CONTRIBUTING.md for the review process.
+# Security reports: email a maintainer directly (see SECURITY.md), not a public issue.
+maintainers:
+  - alessandro <alessandro.scalzulli809@gmail.com>
+reviewers:
+  - alessandro <alessandro.scalzulli809@gmail.com>
