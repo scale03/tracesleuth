@@ -9,7 +9,7 @@
         "--user=ale",
         "ssh",
         "ale@fedora",
-        "TRACESLEUTH_DATA=/home/ale/tracesleuth/data TRACESLEUTH_HOST=fedora TRACESLEUTH_EXECUTOR=mock /home/ale/tracesleuth/bin/tracesleuth-mcp"
+        "TRACESLEUTH_DATA=/home/ale/tracesleuth/data TRACESLEUTH_HOST=fedora TRACESLEUTH_POLICY=/home/ale/tracesleuth/policy/policy.rego TRACESLEUTH_CATALOG=/home/ale/tracesleuth/deploy/policy/catalog.json /home/ale/tracesleuth/bin/tracesleuth-mcp"
       ]
     }
   }

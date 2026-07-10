@@ -1,0 +1,100 @@
+{
+  "bundle_version": "2026.07.02",
+  "probe_types": [
+    "kprobe",
+    "kretprobe",
+    "tracepoint",
+    "uprobe",
+    "interval",
+    "profile"
+  ],
+  "attach_points": [
+    {
+      "name": "tcp_connect",
+      "category": "network",
+      "high_frequency": false,
+      "description": "outbound TCP connection attempts"
+    },
+    {
+      "name": "tcp_retransmit_skb",
+      "category": "network",
+      "high_frequency": false,
+      "description": "TCP retransmissions (latency/loss signal)"
+    },
+    {
+      "name": "inet_csk_accept",
+      "category": "network",
+      "high_frequency": false,
+      "description": "inbound TCP connections accepted (server side) — kretprobe returns the new sock"
+    },
+    {
+      "name": "sys_enter_openat",
+      "category": "process",
+      "high_frequency": true,
+      "description": "file opens — fires constantly, aggregate it"
+    },
+    {
+      "name": "sys_enter_read",
+      "category": "process",
+      "high_frequency": true,
+      "description": "read() entry — very high frequency"
+    },
+    {
+      "name": "sys_enter_write",
+      "category": "process",
+      "high_frequency": true,
+      "description": "write() entry — very high frequency"
+    },
+    {
+      "name": "sys_enter_execve",
+      "category": "process",
+      "high_frequency": false,
+      "description": "process execution (exec) — moderate rate"
+    },
+    {
+      "name": "sched_process_exit",
+      "category": "process",
+      "high_frequency": false,
+      "description": "process exit (teardown) — complements execve for full lifecycle"
+    },
+    {
+      "name": "vfs_unlink",
+      "category": "process",
+      "high_frequency": false,
+      "description": "file deletions (unlink) — who removes files, and what path"
+    },
+    {
+      "name": "signal_generate",
+      "category": "process",
+      "high_frequency": false,
+      "description": "signals sent between processes (SIGKILL/SIGTERM/…) — explains process deaths"
+    },
+    {
+      "name": "block_rq_issue",
+      "category": "disk_io",
+      "high_frequency": false,
+      "description": "block I/O request issued to device"
+    },
+    {
+      "name": "block_rq_complete",
+      "category": "disk_io",
+      "high_frequency": true,
+      "description": "block I/O completion — high frequency under load"
+    },
+    {
+      "name": "sched_switch",
+      "category": "scheduler",
+      "high_frequency": true,
+      "description": "context switches — extremely high frequency"
+    },
+    {
+      "name": "sched_process_exec",
+      "category": "scheduler",
+      "high_frequency": false,
+      "description": "process exec at scheduler level"
+    }
+  ],
+  "default_duration": 30,
+  "max_duration": 300,
+  "max_concurrent": 4
+}

@@ -64,13 +64,23 @@ the event log small and greppable.
   struct is filled from a Teleport certificate by an `IdentityResolver`, and
   nothing downstream (policy input, JSONL schema) changes. This is what keeps
   "SSH now, mTLS later" cheap instead of a rewrite.
-- **`internal/catalog`** — the single allow-list source that policy evaluates
-  against *and* `list_probe_catalog` advertises, so enforced and advertised can't
-  drift.
-- **Policy in two forms** — `internal/policy` (Go, runtime) and `policy/*.rego`
-  (reviewable spec, `opa test` in CI) enforce the same rules. The Go engine lets
-  the daemon decide without an OPA process on-host; the Rego is the reviewed
-  source of truth. They are kept in lockstep by paired tests (see CONTRIBUTING).
+- **`internal/catalog`** — the catalog source that `list_probe_catalog` advertises
+  *and* that feeds policy as the `data.catalog` document (caps, high-frequency set,
+  deny-lists). Loadable from JSON (`TRACESLEUTH_CATALOG`) so it can change without
+  a rebuild; falls back to the compiled `Default()`.
+- **Policy — OPA at runtime, default-allow + deny-list** (bundle 2026.07.02). The
+  daemon evaluates `policy.rego` in-process via the embedded OPA SDK
+  (`internal/policy/engine.go`); the Rego, loadable from disk (`TRACESLEUTH_POLICY`,
+  else an embedded byte-identical copy), is the single source of truth — no more Go
+  rule mirror. Posture is **default-allow**: the host has full bpftrace capability,
+  and policy only carves out what is forbidden (explicit deny-lists) and constrains
+  *modality* (duration caps, high-frequency-must-aggregate, first-probe scoping,
+  concurrency). `internal/policy/policy.rego` is kept byte-identical to
+  `policy/policy.rego` by a guard test; `opa test ./policy/...` runs in CI. Both the
+  MCP server and `tracectl` load policy through one shared `service.PolicyFromEnv`,
+  so every entry point enforces identically. See `deploy/policy/README.md`.
+  *Trust note:* the boundary is now the on-disk `policy.rego`/`catalog.json` (gated
+  by the launching Teleport identity), not the signed binary.
 
 ## Keeping the agent from drowning in output
 

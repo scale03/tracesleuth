@@ -231,8 +231,19 @@ func textResult(text string, isError bool) map[string]any {
 func renderCatalog(c catalog.Catalog) string {
 	var b strings.Builder
 	b.WriteString("bundle " + c.BundleVersion)
+	b.WriteString("\nposture: default-allow + deny-list — full bpftrace capability; policy denies only the points/modalities below")
 	b.WriteString("\nlimits: default duration " + itoa(c.DefaultDuration) + "s, max " + itoa(c.MaxDuration) + "s, max concurrent " + itoa(c.MaxConcurrent))
-	b.WriteString("\nprobe types: " + strings.Join(c.ProbeTypes, ", ") + "\n")
+	b.WriteString("\nprobe types: " + strings.Join(c.ProbeTypes, ", ") + " (advertised; other kinds are allowed unless denied)")
+	if len(c.DeniedAttachPoints) > 0 || len(c.DeniedProbeTypes) > 0 {
+		b.WriteString("\ndenied by policy:")
+		if len(c.DeniedAttachPoints) > 0 {
+			b.WriteString(" attach=" + strings.Join(c.DeniedAttachPoints, ","))
+		}
+		if len(c.DeniedProbeTypes) > 0 {
+			b.WriteString(" types=" + strings.Join(c.DeniedProbeTypes, ","))
+		}
+	}
+	b.WriteString("\n\nknown attach points (discovery — not an allow-list):\n")
 	for _, cat := range []catalog.Category{catalog.Network, catalog.Process, catalog.DiskIO, catalog.Scheduler} {
 		aps := c.GroupByCategory()[cat]
 		if len(aps) == 0 {
