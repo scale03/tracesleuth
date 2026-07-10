@@ -1,0 +1,7 @@
+# The development plan is a working doc, kept out of version control per project conventions.
+TraceSleuth.md
+/data/
+/outputs/
+*.db
+*.db-*
+/bin/
