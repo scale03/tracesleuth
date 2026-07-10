@@ -12,20 +12,21 @@ import (
 )
 
 func TestSSHResolverFromTeleportEnv(t *testing.T) {
+	// A Teleport SSH node exports SSH_TELEPORT_USER into the session.
 	env := map[string]string{
-		"SSH_CONNECTION": "10.0.0.5 51000 10.0.0.9 22",
-		"TELEPORT_USER":  "agent-x",
-		"TELEPORT_ROLES": "reliability-team,oncall",
-		"USER":           "ale",
+		"SSH_CONNECTION":    "10.0.0.5 51000 10.0.0.9 3022",
+		"SSH_TELEPORT_USER": "agent-x",
+		"TELEPORT_ROLES":    "reliability-team,oncall",
+		"USER":              "ale",
 	}
 	id, err := NewSSHResolver(func(k string) string { return env[k] }).Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if id.Name != "ssh:agent-x" {
-		t.Fatalf("expected teleport user to win, got %q", id.Name)
+		t.Fatalf("expected teleport user to win over login user, got %q", id.Name)
 	}
-	if len(id.Roles) != 2 || id.Roles[0] != "reliability-team" {
+	if len(id.Roles) != 2 || !hasRole(id.Roles, "reliability-team") {
 		t.Fatalf("roles not parsed: %v", id.Roles)
 	}
 }

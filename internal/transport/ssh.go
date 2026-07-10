@@ -31,11 +31,12 @@ func (r *SSHResolver) Resolve() (service.Identity, error) {
 	if r.getenv("SSH_CONNECTION") == "" && r.getenv("SSH_CLIENT") == "" {
 		return service.Identity{}, errors.New("not an SSH session (no SSH_CONNECTION/SSH_CLIENT)")
 	}
-	// Prefer the Teleport-provided identity when present (Teleport can export
-	// TELEPORT_USER / a roles list into the session), else the login user which,
-	// under a Teleport-brokered login, is the cryptographically enforced
-	// certificate principal.
-	name := firstNonEmpty(r.getenv("TELEPORT_USER"), r.getenv("USER"), r.getenv("LOGNAME"))
+	// Prefer the Teleport-provided identity when present. A Teleport SSH node
+	// exports SSH_TELEPORT_USER (the authenticated Teleport username) into every
+	// session; TELEPORT_USER is honored too for other setups. Otherwise fall back
+	// to the login user, which under a Teleport-brokered login is the
+	// cryptographically enforced certificate principal.
+	name := firstNonEmpty(r.getenv("SSH_TELEPORT_USER"), r.getenv("TELEPORT_USER"), r.getenv("USER"), r.getenv("LOGNAME"))
 	if name == "" {
 		return service.Identity{}, errors.New("SSH session has no resolvable user")
 	}
