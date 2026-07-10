@@ -12,11 +12,20 @@ point later a human can answer, with zero ambiguity:
 written to an append-only, hash-chained JSONL log (the source of truth); a
 SQLite index is a disposable projection rebuilt from it for fast queries.
 
-Status: **single-host core working** — Phases 0, 1, 3 (embedded policy), 6, plus
-output-shaping and the discovery catalog. Teleport transport (Phase 2) and async
-baselines (Phase 7) are designed but not yet built. See
-[`docs/architecture.md`](docs/architecture.md) for the full picture and
+Status: **single-host core working, driveable via MCP** — Phases 0, 1, 3
+(embedded policy), 6, 8, plus output-shaping, the discovery catalog, an **MCP
+server**, and the Phase 2 **`IdentityResolver`** seam with SSH + mTLS resolvers
+(a live Teleport cluster is a deployment step). Async baselines (Phase 7) are
+designed but not built. See [`docs/architecture.md`](docs/architecture.md) for
+the full picture, [`docs/mcp.md`](docs/mcp.md) to drive it from an agent, and
 [`docs/status.md`](docs/status.md) for the phase-by-phase state.
+
+## Use it from an agent (MCP)
+
+The intended interface is the MCP server (`cmd/tracesleuth-mcp`): an agent calls
+`list_probe_catalog`, `open_investigation`, `run_probe`, `close_investigation`.
+It runs on the Linux host and is launched over SSH; identity is derived from the
+transport, not trusted from the client. See [`docs/mcp.md`](docs/mcp.md).
 
 ## What's here
 
@@ -28,6 +37,8 @@ baselines (Phase 7) are designed but not yet built. See
 | Execution | `internal/exec` | `Executor` iface: real bpftrace (Linux) or mock |
 | Index | `internal/store` | SQLite projection, rebuildable from JSONL |
 | Orchestration | `internal/service` | hypothesis → probe → policy → result flow |
+| Transport/identity | `internal/transport` | `IdentityResolver`: SSH + mTLS, one Teleport CA |
+| MCP server | `cmd/tracesleuth-mcp` | agent-facing tool surface over stdio JSON-RPC |
 | CLIs | `cmd/tracectl`, `cmd/verify-chain` | drive investigations; verify the chain |
 
 ## Quickstart (single host)

@@ -25,9 +25,15 @@ The security design is about constraining and recording that.
 - **Semantic safety of an allowed script.** Policy checks shape and attach point,
   not intent; an allow-listed probe can still be expensive. cgroup/CPU/memory
   guards are Phase 4 and not yet implemented.
-- **Authentication / authorization of the caller.** Phase 1 identity is a CLI
-  flag and is *not* verified. Cryptographic identity (Teleport certificates) is
-  Phase 2. Do not expose the daemon on a network until then.
+- **Authentication / authorization of the caller.** The MCP server derives
+  identity from the transport (`internal/transport`): over SSH it uses the
+  session user and ignores any client-claimed identity, so `agent_identity` in
+  the log is the real SSH/Teleport caller. The `tracectl` CLI still takes an
+  unverified `--identity` flag (local single-host use). Strong end-to-end
+  identity depends on Teleport issuing the SSH/mTLS certificates (Phase 2
+  deployment); until a Teleport cluster is in place, plain SSH's user identity is
+  only as strong as your SSH access control. Do not expose the daemon as an
+  unauthenticated network service.
 - **Multi-host / cross-host audit integrity.** Each host's log is independent;
   there is no central tamper-evident ledger yet.
 - **Confidentiality of captured output.** Probe output may contain sensitive
