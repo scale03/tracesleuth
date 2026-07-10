@@ -69,10 +69,13 @@ Teleport CA:
   Teleport uses.
 
 Both are implementations of the same `IdentityResolver` interface, so the daemon
-logic, policy input, and audit schema never change between them. Standing up a
-live Teleport cluster (auth+proxy on the host, `tsh`/`tbot` on the client) is a
-deployment step; the resolvers are built and unit-tested
-(`internal/transport/resolver_test.go`).
+logic, policy input, and audit schema never change between them.
+
+**A live SSH-via-Teleport cluster is set up** — see [`deploy/teleport/`](../deploy/teleport/README.md).
+The included `.mcp.json` launches the server with `tsh ssh` through the Teleport
+proxy using an identity file, and the audit log records `ssh:ale` from the
+Teleport certificate. The mTLS path (`tbot` → `MTLSResolver`) is coded and
+unit-tested but is not yet the live transport.
 
 ## Poking the server by hand
 
