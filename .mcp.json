@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tracesleuth": {
+      "command": "ssh",
+      "args": [
+        "-T",
+        "ale@192.168.1.23",
+        "TRACESLEUTH_DATA=/home/ale/tracesleuth/data TRACESLEUTH_HOST=fedora TRACESLEUTH_EXECUTOR=mock /home/ale/tracesleuth/bin/tracesleuth-mcp"
+      ]
+    }
+  }
+}
