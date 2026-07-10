@@ -1,0 +1,26 @@
+# Demo-grade all-in-one Teleport (auth + proxy + ssh node), run as an
+# unprivileged user with TLS routing on a single port. NOT production hardening:
+# self-signed certs, single node, sessions run as the launching user.
+version: v3
+teleport:
+  nodename: fedora
+  data_dir: /home/ale/teleport/data
+  log:
+    output: /home/ale/teleport/teleport.log
+    severity: ERROR
+auth_service:
+  enabled: "yes"
+  cluster_name: tracesleuth
+  listen_addr: 127.0.0.1:3025
+  proxy_listener_mode: multiplex
+  authentication:
+    type: local
+    second_factor: "otp"
+proxy_service:
+  enabled: "yes"
+  web_listen_addr: 0.0.0.0:3080
+  public_addr: ["192.168.1.23:3080"]
+ssh_service:
+  enabled: "yes"
+  labels:
+    env: demo

@@ -1,0 +1,12 @@
+kind: role
+version: v7
+metadata:
+  name: tracesleuth-access
+spec:
+  allow:
+    logins: ["ale"]
+    node_labels:
+      '*': '*'
+    rules:
+      - resources: ['*']
+        verbs: ['*']
