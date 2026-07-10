@@ -5,6 +5,7 @@ BIN := bin
 build:
 	go build -o $(BIN)/tracectl ./cmd/tracectl
 	go build -o $(BIN)/verify-chain ./cmd/verify-chain
+	go build -o $(BIN)/tracesleuth-mcp ./cmd/tracesleuth-mcp
 
 test:
 	TRACESLEUTH_EXECUTOR=mock go test ./... -count=1
