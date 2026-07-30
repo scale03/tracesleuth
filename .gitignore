@@ -6,3 +6,4 @@ TraceSleuth.md
 *.db-*
 /bin/
 .mcp.json
+sync.sh
