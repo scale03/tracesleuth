@@ -5,3 +5,4 @@ TraceSleuth.md
 *.db
 *.db-*
 /bin/
+.mcp.json
