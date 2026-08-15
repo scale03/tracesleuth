@@ -1,5 +1,8 @@
-# The development plan is a working doc, kept out of version control per project conventions.
+# Working docs, kept out of version control until the project is public.
 TraceSleuth.md
+AGENT.md
+/docs/roadmap.md
+/docs/kickoff-prompt.md
 /data/
 /outputs/
 *.db
