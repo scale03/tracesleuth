@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"strings"
+
+	"tracesleuth/internal/event"
 )
 
 // Describe renders an investigation's full reconstructed chain from the SQLite
@@ -16,6 +18,9 @@ func (s *Service) Describe(invID string) (string, bool, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Investigation %s  [%s]\n", iv.ID, iv.Status)
 	fmt.Fprintf(&b, "  host:       %s\n", iv.Host)
+	if env := renderEnv(iv.Environment); env != "" {
+		fmt.Fprintf(&b, "  env:        %s\n", env)
+	}
 	fmt.Fprintf(&b, "  identity:   %s\n", iv.AgentIdentity)
 	fmt.Fprintf(&b, "  opened:     %s\n", iv.OpenedAt)
 	if iv.ClosedAt != "" {
@@ -42,6 +47,34 @@ func (s *Service) Describe(invID string) (string, bool, error) {
 		}
 	}
 	return b.String(), true, nil
+}
+
+// renderEnv formats the captured host environment as one compact line, skipping
+// any field that wasn't determined (empty on a non-Linux host, for example).
+func renderEnv(e *event.Environment) string {
+	if e == nil {
+		return ""
+	}
+	var parts []string
+	if e.Distro != "" {
+		parts = append(parts, e.Distro)
+	}
+	if e.Kernel != "" {
+		parts = append(parts, "kernel "+e.Kernel)
+	}
+	if e.Arch != "" {
+		parts = append(parts, e.Arch)
+	}
+	if e.BpftraceVersion != "" {
+		parts = append(parts, "bpftrace "+e.BpftraceVersion)
+	}
+	if e.BTF {
+		parts = append(parts, "BTF")
+	}
+	if e.ProbeCount > 0 {
+		parts = append(parts, fmt.Sprintf("%d probes", e.ProbeCount))
+	}
+	return strings.Join(parts, " · ")
 }
 
 func trimJSONArray(s string) string {

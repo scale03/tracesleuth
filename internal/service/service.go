@@ -17,6 +17,7 @@ import (
 
 	"tracesleuth/internal/catalog"
 	"tracesleuth/internal/cost"
+	"tracesleuth/internal/env"
 	"tracesleuth/internal/event"
 	"tracesleuth/internal/exec"
 	"tracesleuth/internal/output"
@@ -41,6 +42,10 @@ type Config struct {
 	// Policy is the OPA decision engine. If nil, New builds one from the embedded
 	// policy and Catalog.AsData() — the built-in default-allow + deny-list posture.
 	Policy *policy.Engine
+	// CaptureEnv returns the host environment recorded as a chain event at open.
+	// If nil, New installs a best-effort inspector of the real host; tests inject
+	// a deterministic stub.
+	CaptureEnv func() event.Environment
 }
 
 // Service is safe for sequential CLI use; concurrent investigations get their
@@ -114,6 +119,10 @@ func New(cfg Config) (*Service, error) {
 		}
 		cfg.Policy = eng
 	}
+	if cfg.CaptureEnv == nil {
+		useSudo := os.Getenv("TRACESLEUTH_EXECUTOR") != "mock"
+		cfg.CaptureEnv = func() event.Environment { return env.Capture("", useSudo) }
+	}
 	return &Service{cfg: cfg, logsDir: logsDir, outDir: outDir, store: st}, nil
 }
 
@@ -140,15 +149,21 @@ func (s *Service) record(id string, e event.Event) (event.Event, error) {
 	return written, nil
 }
 
-// Open starts a new investigation and returns its id.
+// Open starts a new investigation and returns its id. The host environment is
+// captured as its own chain event immediately after, so every finding is bound
+// to the kernel and bpftrace that produced it.
 func (s *Service) Open(id Identity) (string, error) {
 	invID := "inv_" + randID(4)
-	_, err := s.record(invID, event.Event{
+	if _, err := s.record(invID, event.Event{
 		Event:         event.InvestigationOpened,
 		AgentIdentity: id.Name,
 		IdentityRoles: id.Roles,
 		Host:          s.cfg.Host,
-	})
+	}); err != nil {
+		return invID, err
+	}
+	envInfo := s.cfg.CaptureEnv()
+	_, err := s.record(invID, event.Event{Event: event.EnvironmentCaptured, Environment: &envInfo})
 	return invID, err
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"tracesleuth/internal/catalog"
+	"tracesleuth/internal/event"
 	"tracesleuth/internal/exec"
 	"tracesleuth/internal/service"
 )
@@ -17,10 +18,11 @@ import (
 func serverToBuffer(t *testing.T, buf *bytes.Buffer) *Server {
 	t.Helper()
 	svc, err := service.New(service.Config{
-		DataDir:  t.TempDir(),
-		Host:     "test-host",
-		Executor: exec.NewMock(),
-		Catalog:  catalog.Default(),
+		DataDir:    t.TempDir(),
+		Host:       "test-host",
+		Executor:   exec.NewMock(),
+		Catalog:    catalog.Default(),
+		CaptureEnv: func() event.Environment { return event.Environment{Arch: "amd64"} },
 	})
 	if err != nil {
 		t.Fatal(err)
