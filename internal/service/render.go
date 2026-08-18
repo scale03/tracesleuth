@@ -37,6 +37,10 @@ func (r ProbeReport) Render() string {
 	fmt.Fprintf(&b, "started at %s, pid %d, investigation %s, probe %s, exit %d\n",
 		r.StartedAt, r.Pid, r.InvestigationID, r.ProbeID, r.ExitCode)
 	fmt.Fprintf(&b, "full output: %s (%d bytes)\n", r.OutputPath, r.Summary.RawBytes)
+	if chart := r.Summary.Chart(); chart != "" {
+		b.WriteString("\n--- aggregations ---\n")
+		b.WriteString(chart)
+	}
 	b.WriteString("\n--- output summary")
 	if r.Summary.Truncated {
 		b.WriteString(" (truncated — full capture on disk)")
