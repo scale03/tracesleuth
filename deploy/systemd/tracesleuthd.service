@@ -1,0 +1,40 @@
+[Unit]
+Description=TraceSleuth daemon — policy-gated bpftrace investigations over MCP
+Documentation=https://github.com/scale03/tracesleuth
+After=network.target
+
+[Service]
+Type=simple
+User=tracesleuth
+Group=tracesleuth
+ExecStart=/usr/local/bin/tracesleuthd
+
+# Data (JSONL audit log + SQLite index) lives under the state directory; the MCP
+# socket lives under the runtime directory. systemd creates and owns both.
+Environment=TRACESLEUTH_DATA=/var/lib/tracesleuth
+Environment=TRACESLEUTH_SOCKET=/run/tracesleuth/tracesleuth.sock
+Environment=TRACESLEUTH_HTTP=127.0.0.1:9464
+# Optional operator overrides (reviewable policy/catalog on disk, host label):
+EnvironmentFile=-/etc/tracesleuth/tracesleuth.env
+
+StateDirectory=tracesleuth
+StateDirectoryMode=0750
+# 0710 lets members of the tracesleuth group traverse to the socket without
+# listing the directory; the socket itself is group rw. Identity is still the
+# connecting peer's uid (SO_PEERCRED), never the directory permissions.
+RuntimeDirectory=tracesleuth
+RuntimeDirectoryMode=0710
+
+# bpftrace is elevated through a scoped sudoers rule (see deploy/sudoers), so
+# NoNewPrivileges must stay off. The hardening below is what's safe alongside the
+# kernel access bpftrace needs — do not add ProtectKernel*/RestrictNamespaces,
+# which break tracing.
+NoNewPrivileges=no
+ProtectHome=yes
+PrivateTmp=yes
+
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
