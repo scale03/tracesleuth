@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"tracesleuth/internal/catalog"
@@ -48,13 +49,15 @@ type Config struct {
 	CaptureEnv func() event.Environment
 }
 
-// Service is safe for sequential CLI use; concurrent investigations get their
-// own append log so their chains never interleave.
+// Service ties the audit log, policy, executor, and index together. The daemon
+// serves concurrent connections, so writes are serialized: recordMu guards the
+// append-then-project step that must stay atomic per event.
 type Service struct {
-	cfg     Config
-	logsDir string
-	outDir  string
-	store   *store.Store
+	cfg      Config
+	logsDir  string
+	outDir   string
+	store    *store.Store
+	recordMu sync.Mutex
 }
 
 // PolicyFromEnv loads the catalog (TRACESLEUTH_CATALOG, JSON) and policy module
@@ -133,6 +136,8 @@ func (s *Service) Catalog() catalog.Catalog { return s.cfg.Catalog }
 // openLog returns the append log for an investigation, appends the event, and
 // projects it into the index — the two writes that must always happen together.
 func (s *Service) record(id string, e event.Event) (event.Event, error) {
+	s.recordMu.Lock()
+	defer s.recordMu.Unlock()
 	lg, err := event.OpenLog(s.logsDir, id)
 	if err != nil {
 		return event.Event{}, err

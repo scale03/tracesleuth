@@ -1,21 +1,31 @@
 // Command tracesleuth-mcp exposes TraceSleuth's investigation surface to an
 // agent over stdio JSON-RPC 2.0 (the Model Context Protocol). It is launched per
-// connection — typically over ssh / tsh ssh — resolves the caller from the
-// transport, and serves the MCP surface against a local data directory.
+// connection — typically over ssh / tsh ssh — and runs in one of two modes:
+//
+//   - relay (-connect / TRACESLEUTH_SOCKET set): pipe stdio to the tracesleuthd
+//     Unix socket. The daemon owns the data and derives identity from this
+//     process's kernel credentials. This is the standalone deployment path.
+//   - direct (default): resolve identity from the transport and serve the MCP
+//     surface in-process against a local data directory. Used for simple setups
+//     and development, with no daemon.
 //
 // Transport: newline-delimited JSON-RPC on stdin/stdout. NOTHING except protocol
 // messages may be written to stdout; all diagnostics go to stderr.
 //
 // Config via environment:
 //
-//	TRACESLEUTH_DATA      data directory (default ./data)
+//	TRACESLEUTH_SOCKET    daemon socket to relay to; if set, relay mode
+//	TRACESLEUTH_DATA      data directory (direct mode; default ./data)
 //	TRACESLEUTH_HOST      host label recorded on investigations (default hostname)
 //	TRACESLEUTH_IDENTITY  default caller identity if no transport identity resolves
 //	TRACESLEUTH_EXECUTOR  "mock" forces the fake backend; otherwise real bpftrace on Linux
 package main
 
 import (
+	"flag"
+	"io"
 	"log"
+	"net"
 	"os"
 
 	"tracesleuth/internal/mcp"
@@ -26,6 +36,15 @@ import (
 func main() {
 	log.SetOutput(os.Stderr)
 	log.SetPrefix("tracesleuth-mcp: ")
+
+	connect := flag.String("connect", os.Getenv("TRACESLEUTH_SOCKET"), "tracesleuthd Unix socket to relay to; empty serves in-process")
+	flag.Parse()
+	if *connect != "" {
+		if err := relay(*connect); err != nil {
+			log.Fatalf("relay: %v", err)
+		}
+		return
+	}
 
 	data := env("TRACESLEUTH_DATA", "./data")
 	host := env("TRACESLEUTH_HOST", "")
@@ -65,6 +84,27 @@ func main() {
 	if err := srv.Serve(os.Stdin, os.Stdout); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+// relay pipes stdin/stdout to the daemon socket. The daemon reads this process's
+// kernel credentials for identity, so the relay carries no identity of its own —
+// it only forwards bytes. When stdin ends it half-closes the socket to signal
+// EOF, then keeps forwarding the daemon's replies until the daemon closes; that
+// ordering is what lets the last response drain instead of being cut off.
+func relay(socket string) error {
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	uc := conn.(*net.UnixConn)
+
+	go func() {
+		io.Copy(uc, os.Stdin)
+		uc.CloseWrite() // EOF to the daemon; the read half stays open for replies
+	}()
+	_, err = io.Copy(os.Stdout, uc)
+	return err
 }
 
 func env(k, def string) string {
