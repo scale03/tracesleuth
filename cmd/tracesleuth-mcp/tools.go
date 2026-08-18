@@ -63,11 +63,6 @@ func toolSpecs() []map[string]any {
 			"description": "Return an investigation's full reconstructed chain (hypothesis, every probe, decisions, outputs) from the index.",
 			"inputSchema": obj(map[string]any{"investigation_id": str}, "investigation_id"),
 		},
-		{
-			"name": "verify_investigation",
-			"description": "Verify the tamper-evident hash chain of an investigation's audit log.",
-			"inputSchema": obj(map[string]any{"investigation_id": str}, "investigation_id"),
-		},
 	}
 }
 
@@ -108,8 +103,6 @@ func (s *Server) callTool(params json.RawMessage) map[string]any {
 		return s.toolClose(p.Arguments)
 	case "show_investigation":
 		return s.toolShow(p.Arguments)
-	case "verify_investigation":
-		return s.toolVerify(p.Arguments)
 	default:
 		return textResult("unknown tool: "+p.Name, true)
 	}
@@ -206,17 +199,6 @@ func (s *Server) toolShow(args json.RawMessage) map[string]any {
 		return textResult("investigation not found: "+a.InvestigationID, true)
 	}
 	return textResult(text, false)
-}
-
-func (s *Server) toolVerify(args json.RawMessage) map[string]any {
-	var a struct {
-		InvestigationID string `json:"investigation_id"`
-	}
-	if err := json.Unmarshal(args, &a); err != nil {
-		return textResult("bad arguments: "+err.Error(), true)
-	}
-	line, err := s.svc.VerifyChain(a.InvestigationID)
-	return textResult(line, err != nil)
 }
 
 // textResult wraps text in the MCP tool-result content shape.

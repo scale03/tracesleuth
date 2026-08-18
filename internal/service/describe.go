@@ -3,8 +3,6 @@ package service
 import (
 	"fmt"
 	"strings"
-
-	"tracesleuth/internal/event"
 )
 
 // Describe renders an investigation's full reconstructed chain from the SQLite
@@ -44,16 +42,6 @@ func (s *Service) Describe(invID string) (string, bool, error) {
 		}
 	}
 	return b.String(), true, nil
-}
-
-// VerifyChain verifies one investigation's JSONL log and returns a status line.
-func (s *Service) VerifyChain(invID string) (string, error) {
-	path := s.logsDir + "/" + invID + ".jsonl"
-	res, err := event.VerifyFile(path)
-	if err != nil {
-		return fmt.Sprintf("✗ %s TAMPERED: %v", invID, err), err
-	}
-	return fmt.Sprintf("✓ %s intact (%d audit lines)", invID, res.Lines), nil
 }
 
 func trimJSONArray(s string) string {
