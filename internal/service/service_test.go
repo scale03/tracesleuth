@@ -37,7 +37,7 @@ func TestEndToEndChainReconstructable(t *testing.T) {
 		AttachPoints: []string{"tcp_connect"},
 		ScriptText:   "kprobe:tcp_connect { @start[tid] = nsecs; }",
 		DurationS:    30,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestDeniedProbeDoesNotRun(t *testing.T) {
 		ScriptText:   `tracepoint:syscalls:sys_enter_read { printf("%d\n", pid); }`,
 		DurationS:    10,
 		FilterPID:    true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestReindexReproducesState(t *testing.T) {
 	s.RunProbe(context.Background(), inv, ProbeRequest{
 		ProbeTypes: []string{"kprobe"}, AttachPoints: []string{"tcp_connect"},
 		ScriptText: "kprobe:tcp_connect { @=count(); }", DurationS: 20, FilterPID: true,
-	})
+	}, nil)
 	s.Close_(inv, "done")
 
 	before, _, _ := s.Store().Get(inv)

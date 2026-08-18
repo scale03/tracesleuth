@@ -98,6 +98,9 @@ type Server struct {
 	// identity argument is ignored so the caller can't spoof who they are.
 	identityVerified bool
 	host             string
+	// w is the response writer, held so a handler can emit progress
+	// notifications mid-call. All writes happen on the Serve goroutine.
+	w *bufio.Writer
 }
 
 // --- JSON-RPC envelope ------------------------------------------------------
@@ -125,7 +128,7 @@ type rpcError struct {
 func (s *Server) Serve(in *os.File, out *os.File) error {
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024) // scripts can be large
-	w := bufio.NewWriter(out)
+	s.w = bufio.NewWriter(out)
 
 	for sc.Scan() {
 		line := sc.Bytes()
@@ -142,13 +145,28 @@ func (s *Server) Serve(in *os.File, out *os.File) error {
 			continue // notifications get no reply
 		}
 		b, _ := json.Marshal(resp)
-		w.Write(b)
-		w.WriteByte('\n')
-		if err := w.Flush(); err != nil {
+		s.w.Write(b)
+		s.w.WriteByte('\n')
+		if err := s.w.Flush(); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
+}
+
+// notify writes a JSON-RPC notification (no id, no reply expected) to the client.
+// It runs on the Serve goroutine, so it shares the writer without locking.
+func (s *Server) notify(method string, params any) {
+	if s.w == nil {
+		return
+	}
+	msg, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": params})
+	if err != nil {
+		return
+	}
+	s.w.Write(msg)
+	s.w.WriteByte('\n')
+	s.w.Flush()
 }
 
 func (s *Server) handle(req *rpcRequest) (rpcResponse, bool) {

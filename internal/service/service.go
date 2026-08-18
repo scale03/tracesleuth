@@ -192,11 +192,25 @@ type ProbeReport struct {
 	OutputPath      string
 }
 
+// ProbeProgress is a stage transition inside RunProbe. The run is synchronous,
+// so without this a caller sees nothing between the request and the final result;
+// a transport can pass a callback to surface live progress (the MCP server turns
+// these into progress notifications).
+type ProbeProgress struct {
+	Stage   string // validating | policy | attaching | capturing | flushing | done | denied
+	Message string
+}
+
 // RunProbe executes the full per-probe pipeline: propose → dry-run → policy →
 // (if allowed) run → capture. Every stage is logged, including denials. A denied
 // probe returns a report with the actionable reasons and Ran=false; nothing
-// touches the kernel.
-func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) (ProbeReport, error) {
+// touches the kernel. progress may be nil; when set it is called at each stage.
+func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest, progress func(ProbeProgress)) (ProbeReport, error) {
+	emit := func(stage, msg string) {
+		if progress != nil {
+			progress(ProbeProgress{Stage: stage, Message: msg})
+		}
+	}
 	if req.DurationS == 0 {
 		req.DurationS = s.cfg.Catalog.DefaultDuration
 	}
@@ -219,16 +233,19 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	spec := exec.Spec{ProbeID: probeID, ScriptText: req.ScriptText, Duration: time.Duration(req.DurationS) * time.Second}
 
 	// 2. dry-run (cheap parse check) before policy, per the plan's ordering.
+	emit("validating", "dry-run parse check")
 	if err := s.cfg.Executor.DryRun(ctx, spec); err != nil {
 		reason := fmt.Sprintf("script failed validation (%s): %v", s.cfg.Executor.Name(), err)
 		if _, e := s.recordDecision(invID, probeID, false, []string{reason}); e != nil {
 			return rep, e
 		}
 		rep.Decision, rep.Reasons = "deny", []string{reason}
+		emit("denied", reason)
 		return rep, nil
 	}
 
 	// 3. policy decision, evaluated against live investigation/host context.
+	emit("policy", "evaluating against posture")
 	in := policy.Input{
 		Action: policy.Action{
 			ProbeTypes:   req.ProbeTypes,
@@ -257,10 +274,14 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	}
 	rep.Decision, rep.Reasons = dec.Verdict(), dec.Reasons
 	if !dec.Allow {
+		emit("denied", firstReason(dec.Reasons))
 		return rep, nil // denied: nothing runs
 	}
 
-	// 4. execute.
+	// 4. execute. attaching then capturing bracket the one blocking call, so the
+	// last thing a watcher sees during the capture window is "capturing".
+	emit("attaching", "attaching probe to the kernel")
+	emit("capturing", fmt.Sprintf("capturing for up to %ds", req.DurationS))
 	res, runErr := s.cfg.Executor.Run(ctx, spec)
 
 	// 5. probe_started (recorded with the real start time + pid) then probe_ended.
@@ -270,6 +291,7 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 		return rep, err
 	}
 
+	emit("flushing", "writing captured output")
 	outPath := filepath.Join("outputs", invID, probeID+".log")
 	absOut := filepath.Join(s.cfg.DataDir, outPath)
 	if err := os.MkdirAll(filepath.Dir(absOut), 0o750); err != nil {
@@ -297,7 +319,16 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	rep.TimedOut = res.TimedOut
 	rep.Summary = output.Summarize(res.Output)
 	rep.OutputPath = outPath
+	emit("done", "capture complete")
 	return rep, runErr
+}
+
+// firstReason returns the leading policy reason, or a generic denial note.
+func firstReason(reasons []string) string {
+	if len(reasons) > 0 {
+		return reasons[0]
+	}
+	return "denied by policy"
 }
 
 // PreviewReport is what preview_probe returns: the same decision run_probe would

@@ -95,6 +95,11 @@ func merge(a, b map[string]any) map[string]any {
 type callParams struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
+	// Meta carries the optional MCP progress token; when present, run_probe
+	// streams notifications/progress against it during the capture.
+	Meta struct {
+		ProgressToken json.RawMessage `json:"progressToken"`
+	} `json:"_meta"`
 }
 
 // callTool routes a tools/call to the matching handler and wraps the result in
@@ -111,7 +116,7 @@ func (s *Server) callTool(params json.RawMessage) map[string]any {
 	case "open_investigation":
 		return s.toolOpen(p.Arguments)
 	case "run_probe":
-		return s.toolRunProbe(p.Arguments)
+		return s.toolRunProbe(p.Arguments, s.progressFn(p.Meta.ProgressToken))
 	case "preview_probe":
 		return s.toolPreview(p.Arguments)
 	case "close_investigation":
@@ -150,7 +155,24 @@ func (s *Server) toolOpen(args json.RawMessage) map[string]any {
 	return textResult(fmtErr("opened investigation %s on host %s as %s\nhypothesis: %s", inv, s.host, identity.Name, a.Hypothesis), false)
 }
 
-func (s *Server) toolRunProbe(args json.RawMessage) map[string]any {
+// progressFn returns a callback that emits an MCP progress notification per
+// stage, or nil when the client sent no progress token (nothing to notify).
+func (s *Server) progressFn(token json.RawMessage) func(service.ProbeProgress) {
+	if len(token) == 0 || string(token) == "null" {
+		return nil
+	}
+	var n int
+	return func(p service.ProbeProgress) {
+		n++
+		s.notify("notifications/progress", map[string]any{
+			"progressToken": token,
+			"progress":      n,
+			"message":       p.Stage + ": " + p.Message,
+		})
+	}
+}
+
+func (s *Server) toolRunProbe(args json.RawMessage, progress func(service.ProbeProgress)) map[string]any {
 	var a struct {
 		InvestigationID string   `json:"investigation_id"`
 		Script          string   `json:"script"`
@@ -173,7 +195,7 @@ func (s *Server) toolRunProbe(args json.RawMessage) map[string]any {
 		DurationS:    a.DurationS,
 		FilterPID:    a.FilterPID,
 		FilterComm:   a.FilterComm,
-	})
+	}, progress)
 	if err != nil {
 		return textResult("run_probe failed: "+err.Error(), true)
 	}
