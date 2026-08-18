@@ -53,6 +53,33 @@ func (r ProbeReport) Render() string {
 	return b.String()
 }
 
+// Render shows a preview: the decision that a real run would reach and the cost
+// estimate, with the script echoed — but it is explicit that nothing ran.
+func (r PreviewReport) Render() string {
+	var b strings.Builder
+	verdict := "would ALLOW"
+	if r.Decision == "deny" {
+		verdict = "would DENY"
+	}
+	fmt.Fprintf(&b, "PREVIEW (nothing ran) — %s — %s\n\n", verdict, head(r.ScriptText))
+	b.WriteString("```bpftrace\n" + strings.TrimRight(r.ScriptText, "\n") + "\n```\n\n")
+	if r.Decision == "deny" {
+		b.WriteString("decision: deny — reasons:\n")
+		for _, reason := range r.Reasons {
+			fmt.Fprintf(&b, "  • %s\n", reason)
+		}
+	} else {
+		b.WriteString("decision: allow\n")
+	}
+	e := r.Estimate
+	b.WriteString("\ncost estimate (static — no host measurement):\n")
+	fmt.Fprintf(&b, "  event rate: %s\n", e.Rate)
+	fmt.Fprintf(&b, "  aggregated: %t   filtered: %t\n", e.Aggregated, e.Filtered)
+	fmt.Fprintf(&b, "  output volume: %s\n", e.Volume)
+	fmt.Fprintf(&b, "  note: %s\n", e.Note)
+	return b.String()
+}
+
 // head returns the first meaningful line of a script for the status line.
 func head(script string) string {
 	for _, ln := range strings.Split(script, "\n") {

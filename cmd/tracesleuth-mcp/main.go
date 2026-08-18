@@ -188,7 +188,8 @@ func (s *Server) initialize(params json.RawMessage) map[string]any {
 		"serverInfo":      map[string]any{"name": serverName, "version": serverVersion},
 		"instructions": "TraceSleuth: run auditable bpftrace investigations. " +
 			"Call list_probe_catalog first to see allowed probes and which attach points require an aggregation. " +
-			"Then open_investigation, run_probe (repeat), and close_investigation. Every step is written to a tamper-evident audit log.",
+			"Then open_investigation, run_probe (repeat), and close_investigation. Use preview_probe to check a script's " +
+			"decision and cost before running it. Every step is written to a tamper-evident audit log.",
 	}
 }
 

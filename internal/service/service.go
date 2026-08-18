@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"tracesleuth/internal/catalog"
+	"tracesleuth/internal/cost"
 	"tracesleuth/internal/event"
 	"tracesleuth/internal/exec"
 	"tracesleuth/internal/output"
@@ -297,6 +298,61 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	rep.Summary = output.Summarize(res.Output)
 	rep.OutputPath = outPath
 	return rep, runErr
+}
+
+// PreviewReport is what preview_probe returns: the same decision run_probe would
+// reach, plus a cost estimate, without running anything or writing to the chain.
+type PreviewReport struct {
+	InvestigationID string
+	ScriptText      string
+	Decision        string // allow | deny
+	Reasons         []string
+	Estimate        cost.Estimate
+}
+
+// PreviewProbe runs dry-run + policy and estimates cost, but never executes and
+// never records — it exists so a human can see and approve exactly what would
+// run first. invID is optional: when set, the decision reflects that
+// investigation's context (the first-probe rule keys off its prior probe count);
+// when empty, the probe is evaluated as if it were the first in a new one.
+func (s *Service) PreviewProbe(ctx context.Context, invID string, req ProbeRequest) (PreviewReport, error) {
+	if req.DurationS == 0 {
+		req.DurationS = s.cfg.Catalog.DefaultDuration
+	}
+	rep := PreviewReport{
+		InvestigationID: invID,
+		ScriptText:      req.ScriptText,
+		Estimate:        cost.Of(s.cfg.Catalog, req.AttachPoints, req.ScriptText, req.FilterPID, req.FilterComm),
+	}
+
+	spec := exec.Spec{ProbeID: "preview", ScriptText: req.ScriptText, Duration: time.Duration(req.DurationS) * time.Second}
+	if err := s.cfg.Executor.DryRun(ctx, spec); err != nil {
+		rep.Decision = "deny"
+		rep.Reasons = []string{fmt.Sprintf("script failed validation (%s): %v", s.cfg.Executor.Name(), err)}
+		return rep, nil
+	}
+
+	in := policy.Input{
+		Action: policy.Action{
+			ProbeTypes:   req.ProbeTypes,
+			AttachPoints: req.AttachPoints,
+			ScriptText:   req.ScriptText,
+			DurationS:    req.DurationS,
+			Filters:      policy.Filters{PID: req.FilterPID, Comm: req.FilterComm},
+		},
+		Context: policy.Context{
+			ProbeCount:    s.priorProbeCount(invID, ""),
+			RunningOnHost: s.runningOnHost(),
+		},
+	}
+	dec, err := s.cfg.Policy.Evaluate(ctx, in)
+	if err != nil {
+		rep.Decision = "deny"
+		rep.Reasons = []string{fmt.Sprintf("policy evaluation error: %v", err)}
+		return rep, nil
+	}
+	rep.Decision, rep.Reasons = dec.Verdict(), dec.Reasons
+	return rep, nil
 }
 
 func (s *Service) recordDecision(invID, probeID string, allow bool, reasons []string) (event.Event, error) {

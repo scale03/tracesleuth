@@ -51,6 +51,19 @@ func toolSpecs() []map[string]any {
 			}, "investigation_id", "script"),
 		},
 		{
+			"name": "preview_probe",
+			"description": "Dry-run and policy-check a probe and estimate its cost WITHOUT running it or recording anything. Use this to show a human the exact script and the allow/deny decision before committing to a run. Same inputs as run_probe; investigation_id is optional (supply it to reflect that investigation's context, e.g. the first-probe rule).",
+			"inputSchema": obj(map[string]any{
+				"investigation_id": merge(str, map[string]any{"description": "optional; evaluate against this investigation's context"}),
+				"script":           map[string]any{"type": "string", "description": "the bpftrace program text"},
+				"probe_types":      merge(strArr, map[string]any{"description": "e.g. [\"kprobe\",\"kretprobe\"]"}),
+				"attach_points":    merge(strArr, map[string]any{"description": "attach points from the catalog, e.g. [\"tcp_connect\"]"}),
+				"duration_s":       map[string]any{"type": "integer", "description": "seconds; 0 or omitted uses the catalog default"},
+				"filter_pid":       map[string]any{"type": "boolean", "description": "true if the script is scoped by pid"},
+				"filter_comm":      map[string]any{"type": "boolean", "description": "true if the script is scoped by comm"},
+			}, "script"),
+		},
+		{
 			"name": "close_investigation",
 			"description": "Record the conclusion and close an investigation.",
 			"inputSchema": obj(map[string]any{
@@ -99,6 +112,8 @@ func (s *Server) callTool(params json.RawMessage) map[string]any {
 		return s.toolOpen(p.Arguments)
 	case "run_probe":
 		return s.toolRunProbe(p.Arguments)
+	case "preview_probe":
+		return s.toolPreview(p.Arguments)
 	case "close_investigation":
 		return s.toolClose(p.Arguments)
 	case "show_investigation":
@@ -164,6 +179,36 @@ func (s *Server) toolRunProbe(args json.RawMessage) map[string]any {
 	}
 	// A denial is a normal, non-error result: the rendered text IS the actionable
 	// reason the agent should act on.
+	return textResult(rep.Render(), false)
+}
+
+func (s *Server) toolPreview(args json.RawMessage) map[string]any {
+	var a struct {
+		InvestigationID string   `json:"investigation_id"`
+		Script          string   `json:"script"`
+		ProbeTypes      []string `json:"probe_types"`
+		AttachPoints    []string `json:"attach_points"`
+		DurationS       int      `json:"duration_s"`
+		FilterPID       bool     `json:"filter_pid"`
+		FilterComm      bool     `json:"filter_comm"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return textResult("bad arguments: "+err.Error(), true)
+	}
+	if strings.TrimSpace(a.Script) == "" {
+		return textResult("script is required", true)
+	}
+	rep, err := s.svc.PreviewProbe(ctx(), a.InvestigationID, service.ProbeRequest{
+		ProbeTypes:   a.ProbeTypes,
+		AttachPoints: a.AttachPoints,
+		ScriptText:   a.Script,
+		DurationS:    a.DurationS,
+		FilterPID:    a.FilterPID,
+		FilterComm:   a.FilterComm,
+	})
+	if err != nil {
+		return textResult("preview failed: "+err.Error(), true)
+	}
 	return textResult(rep.Render(), false)
 }
 
