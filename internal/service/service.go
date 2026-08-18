@@ -47,7 +47,26 @@ type Config struct {
 	// If nil, New installs a best-effort inspector of the real host; tests inject
 	// a deterministic stub.
 	CaptureEnv func() event.Environment
+	// Metrics receives operational counters and timings. If nil, a no-op is used,
+	// so the CLI and tests need no wiring; the daemon backs it with Prometheus.
+	Metrics Metrics
 }
+
+// Metrics receives operational signals from the pipeline. Implementations must
+// be safe for concurrent use.
+type Metrics interface {
+	InvestigationOpened()
+	ProbeDecided(decision string)  // "allow" or "deny"
+	ProbeObserved(d time.Duration) // a probe that actually ran
+	ProbeRunning(delta int)        // +1 when a probe attaches, -1 when it ends
+}
+
+type noopMetrics struct{}
+
+func (noopMetrics) InvestigationOpened()        {}
+func (noopMetrics) ProbeDecided(string)         {}
+func (noopMetrics) ProbeObserved(time.Duration) {}
+func (noopMetrics) ProbeRunning(int)            {}
 
 // Service ties the audit log, policy, executor, and index together. The daemon
 // serves concurrent connections, so writes are serialized: recordMu guards the
@@ -126,11 +145,14 @@ func New(cfg Config) (*Service, error) {
 		useSudo := os.Getenv("TRACESLEUTH_EXECUTOR") != "mock"
 		cfg.CaptureEnv = func() event.Environment { return env.Capture("", useSudo) }
 	}
+	if cfg.Metrics == nil {
+		cfg.Metrics = noopMetrics{}
+	}
 	return &Service{cfg: cfg, logsDir: logsDir, outDir: outDir, store: st}, nil
 }
 
-func (s *Service) Close() error { return s.store.Close() }
-func (s *Service) Store() *store.Store { return s.store }
+func (s *Service) Close() error             { return s.store.Close() }
+func (s *Service) Store() *store.Store      { return s.store }
 func (s *Service) Catalog() catalog.Catalog { return s.cfg.Catalog }
 
 // openLog returns the append log for an investigation, appends the event, and
@@ -168,8 +190,11 @@ func (s *Service) Open(id Identity) (string, error) {
 		return invID, err
 	}
 	envInfo := s.cfg.CaptureEnv()
-	_, err := s.record(invID, event.Event{Event: event.EnvironmentCaptured, Environment: &envInfo})
-	return invID, err
+	if _, err := s.record(invID, event.Event{Event: event.EnvironmentCaptured, Environment: &envInfo}); err != nil {
+		return invID, err
+	}
+	s.cfg.Metrics.InvestigationOpened()
+	return invID, nil
 }
 
 // Hypothesis records what the investigation is testing.
@@ -236,6 +261,12 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest, 
 	}
 	probeID := "p_" + randID(3)
 	rep := ProbeReport{InvestigationID: invID, ProbeID: probeID, ScriptText: req.ScriptText}
+	// Count the decision once, whichever branch reaches it.
+	defer func() {
+		if rep.Decision != "" {
+			s.cfg.Metrics.ProbeDecided(rep.Decision)
+		}
+	}()
 
 	// 1. probe_proposed — the exact script, stored inline.
 	if _, err := s.record(invID, event.Event{
@@ -302,7 +333,10 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest, 
 	// last thing a watcher sees during the capture window is "capturing".
 	emit("attaching", "attaching probe to the kernel")
 	emit("capturing", fmt.Sprintf("capturing for up to %ds", req.DurationS))
+	s.cfg.Metrics.ProbeRunning(1)
 	res, runErr := s.cfg.Executor.Run(ctx, spec)
+	s.cfg.Metrics.ProbeRunning(-1)
+	s.cfg.Metrics.ProbeObserved(res.Ended.Sub(res.Started))
 
 	// 5. probe_started (recorded with the real start time + pid) then probe_ended.
 	if _, err := s.record(invID, event.Event{

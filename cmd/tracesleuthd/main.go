@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"tracesleuth/internal/mcp"
+	"tracesleuth/internal/metrics"
 	"tracesleuth/internal/service"
 	"tracesleuth/internal/transport"
 )
@@ -57,7 +58,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("policy: %v", err)
 	}
-	svc, err := service.New(service.Config{DataDir: *data, Host: *host, Catalog: cat, Policy: engine})
+	met := metrics.New()
+	svc, err := service.New(service.Config{DataDir: *data, Host: *host, Catalog: cat, Policy: engine, Metrics: met})
 	if err != nil {
 		log.Fatalf("init: %v", err)
 	}
@@ -71,7 +73,7 @@ func main() {
 	defer ln.Close()
 	log.Printf("listening on unix://%s", *socket)
 
-	httpSrv := &http.Server{Addr: *httpAddr, Handler: httpMux()}
+	httpSrv := &http.Server{Addr: *httpAddr, Handler: httpMux(met)}
 	go func() {
 		log.Printf("health/metrics on http://%s", *httpAddr)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -127,12 +129,13 @@ func handleConn(conn *net.UnixConn, svc *service.Service, host string) {
 	}
 }
 
-func httpMux() *http.ServeMux {
+func httpMux(met *metrics.Prometheus) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Write([]byte("ok\n"))
 	})
+	mux.Handle("/metrics", met.Handler())
 	return mux
 }
 
