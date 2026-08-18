@@ -30,7 +30,7 @@ func toolSpecs() []map[string]any {
 			"inputSchema": obj(map[string]any{}),
 		},
 		{
-			"name": "open_investigation",
+			"name":        "open_investigation",
 			"description": "Open a new investigation and record its hypothesis. Returns the investigation_id to pass to run_probe and close_investigation.",
 			"inputSchema": obj(map[string]any{
 				"hypothesis": map[string]any{"type": "string", "description": "what you are testing, in one sentence"},
@@ -38,7 +38,7 @@ func toolSpecs() []map[string]any {
 			}, "hypothesis"),
 		},
 		{
-			"name": "run_probe",
+			"name":        "run_probe",
 			"description": "Validate (dry-run + policy), then run one bpftrace probe within an investigation, capturing its output. Returns a status line, the exact script, the policy decision, and a byte-capped output summary (full output is saved to disk). If policy denies it, nothing runs and the response is the actionable reason. Rules: high-frequency attach points require an aggregation; the first probe in an investigation must be short (<=30s), filtered (pid/comm), or aggregated.",
 			"inputSchema": obj(map[string]any{
 				"investigation_id": str,
@@ -51,7 +51,7 @@ func toolSpecs() []map[string]any {
 			}, "investigation_id", "script"),
 		},
 		{
-			"name": "preview_probe",
+			"name":        "preview_probe",
 			"description": "Dry-run and policy-check a probe and estimate its cost WITHOUT running it or recording anything. Use this to show a human the exact script and the allow/deny decision before committing to a run. Same inputs as run_probe; investigation_id is optional (supply it to reflect that investigation's context, e.g. the first-probe rule).",
 			"inputSchema": obj(map[string]any{
 				"investigation_id": merge(str, map[string]any{"description": "optional; evaluate against this investigation's context"}),
@@ -64,16 +64,16 @@ func toolSpecs() []map[string]any {
 			}, "script"),
 		},
 		{
-			"name": "close_investigation",
-			"description": "Record the conclusion and close an investigation.",
+			"name":        "close_investigation",
+			"description": "Close an investigation with a short recap. Write the conclusion as a couple of sentences a teammate could read cold: what the hypothesis was, what the probes showed, and the answer. Returns the full summary card (hypothesis, environment, each probe's finding, conclusion).",
 			"inputSchema": obj(map[string]any{
 				"investigation_id": str,
-				"conclusion":       str,
+				"conclusion":       merge(str, map[string]any{"description": "the recap: what you found and concluded, in prose"}),
 			}, "investigation_id", "conclusion"),
 		},
 		{
-			"name": "show_investigation",
-			"description": "Return an investigation's full reconstructed chain (hypothesis, every probe, decisions, outputs) from the index.",
+			"name":        "show_investigation",
+			"description": "Return an investigation's summary card from the index: hypothesis, the environment it ran on, each probe with its decision and finding, and the conclusion.",
 			"inputSchema": obj(map[string]any{"investigation_id": str}, "investigation_id"),
 		},
 	}
@@ -248,7 +248,12 @@ func (s *Server) toolClose(args json.RawMessage) map[string]any {
 	if err := s.svc.Close_(a.InvestigationID, a.Conclusion); err != nil {
 		return textResult("close failed: "+err.Error(), true)
 	}
-	return textResult("closed "+a.InvestigationID, false)
+	// Closing returns the full recap card, so the investigation ends summarized.
+	card, ok, err := s.svc.SummaryCard(a.InvestigationID)
+	if err != nil || !ok {
+		return textResult("closed "+a.InvestigationID, false)
+	}
+	return textResult(card, false)
 }
 
 func (s *Server) toolShow(args json.RawMessage) map[string]any {
@@ -258,7 +263,7 @@ func (s *Server) toolShow(args json.RawMessage) map[string]any {
 	if err := json.Unmarshal(args, &a); err != nil {
 		return textResult("bad arguments: "+err.Error(), true)
 	}
-	text, ok, err := s.svc.Describe(a.InvestigationID)
+	text, ok, err := s.svc.SummaryCard(a.InvestigationID)
 	if err != nil {
 		return textResult("show failed: "+err.Error(), true)
 	}

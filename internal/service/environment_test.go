@@ -53,14 +53,14 @@ func TestEnvironmentProjectedAndReindexed(t *testing.T) {
 	check("reindex")
 }
 
-// show_investigation renders the environment as a compact line.
-func TestDescribeShowsEnvironment(t *testing.T) {
+// The summary card renders the environment as a compact line.
+func TestSummaryCardShowsEnvironment(t *testing.T) {
 	s, _ := newSvc(t)
 	inv, _ := s.Open(Identity{Name: "bot:x"})
 	s.Hypothesis(inv, "h")
-	text, ok, err := s.Describe(inv)
+	text, ok, err := s.SummaryCard(inv)
 	if err != nil || !ok {
-		t.Fatalf("describe: ok=%v err=%v", ok, err)
+		t.Fatalf("summary card: ok=%v err=%v", ok, err)
 	}
 	for _, want := range []string{"TestOS", "kernel 6.1.0-test", "bpftrace 0.24.2", "1234 probes"} {
 		if !strings.Contains(text, want) {
