@@ -1,10 +1,22 @@
+<br>
+
+  <pre>
+
+ <br> 
+                                                                           
 ████████╗██████╗  █████╗   ██████╗ ███████╗ ███████╗ ██╗      ███████╗ ██╗   ██╗ ████████╗ ██╗  ██╗
 ╚══██╔══╝██╔══██╗██╔══██╗ ██╔════╝ ██╔════╝ ██╔════╝ ██║      ██╔════╝ ██║   ██║ ╚══██╔══╝ ██║  ██║
    ██║   ██████╔╝███████║ ██║      █████╗   ███████╗ ██║      █████╗   ██║   ██║    ██║    ███████║
    ██║   ██╔══██╗██╔══██║ ██║      ██╔══╝   ╚════██║ ██║      ██╔══╝   ██║   ██║    ██║    ██╔══██║
    ██║   ██║  ██║██║  ██║ ╚██████╗ ███████╗ ███████║ ███████╗ ███████╗ ╚██████╔╝    ██║    ██║  ██║
    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═════╝ ╚══════╝ ╚══════╝ ╚══════╝ ╚══════╝  ╚═════╝     ╚═╝    ╚═╝  ╚═╝
-         The tactical bpftrace wrapper. Auditable AI-driven investigations for the Linux runtime.
+    Auditable AI-driven bpftrace investigations with historical context for the Linux runtime.                                                                              
+ </pre>
+
+
+
+<br>
+
 
 An internal tool where an agent runs bpftrace-based investigations, and at any
 point later a human can answer, with zero ambiguity:
