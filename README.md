@@ -1,5 +1,4 @@
-
-```
+<pre>
 ████████╗██████╗  █████╗  ██████╗███████╗
 ╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝
    ██║   ██████╔╝███████║██║     █████╗
@@ -12,8 +11,9 @@
  ╚════██║██║     ██╔══╝  ██║   ██║   ██║   ██╔══██║
  ███████║███████╗███████╗╚██████╔╝   ██║   ██║  ██║
  ╚══════╝╚══════╝╚══════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
-```
 
+  Auditable AI-driven bpftrace investigations with historical context for the Linux runtime.
+</pre>
 
 An agent runs bpftrace-based investigations on a host; at any point later a human
 can answer, with zero ambiguity:
