@@ -1,11 +1,13 @@
-# The development plan is a working doc, kept out of version control per project conventions.
+# Working docs, kept out of version control until the project is public.
 TraceSleuth.md
+AGENT.md
+/docs/roadmap.md
+/docs/kickoff-prompt.md
 /data/
 /outputs/
 *.db
 *.db-*
 /bin/
-
-# Local MCP client config carries machine-specific paths and host/identity; each
-# developer copies .mcp.json.example to .mcp.json and edits it for their setup.
 .mcp.json
+sync.sh
+
