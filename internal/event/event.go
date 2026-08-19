@@ -16,6 +16,7 @@ type Type string
 
 const (
 	InvestigationOpened Type = "investigation_opened"
+	EnvironmentCaptured Type = "environment_captured"
 	HypothesisDeclared  Type = "hypothesis_declared"
 	ProbeProposed       Type = "probe_proposed"
 	PolicyDecision      Type = "policy_decision"
@@ -23,6 +24,18 @@ const (
 	ProbeEnded          Type = "probe_ended"
 	InvestigationClosed Type = "investigation_closed"
 )
+
+// Environment is the host context an investigation ran on, captured once at open
+// as its own chain event. It is part of the audit contract: a finding is only
+// meaningful against the kernel and bpftrace that produced it.
+type Environment struct {
+	Kernel          string `json:"kernel,omitempty"`
+	Distro          string `json:"distro,omitempty"`
+	Arch            string `json:"arch,omitempty"`
+	BpftraceVersion string `json:"bpftrace_version,omitempty"`
+	BTF             bool   `json:"btf,omitempty"`
+	ProbeCount      int    `json:"probe_count,omitempty"`
+}
 
 // Event is a single line in an investigation's JSONL log.
 //
@@ -44,6 +57,9 @@ type Event struct {
 	AgentIdentity string   `json:"agent_identity,omitempty"`
 	IdentityRoles []string `json:"identity_roles,omitempty"`
 	Host          string   `json:"host,omitempty"`
+
+	// environment_captured
+	Environment *Environment `json:"environment,omitempty"`
 
 	// hypothesis_declared
 	Text string `json:"text,omitempty"`

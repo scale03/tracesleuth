@@ -1,0 +1,4 @@
+# TraceSleuth: the daemon runs unprivileged and elevates only to run bpftrace.
+# This is the entire extent of its privilege — one binary, nothing else.
+# Install to /etc/sudoers.d/tracesleuth (mode 0440) and validate with `visudo -c`.
+tracesleuth ALL=(root) NOPASSWD: /usr/bin/bpftrace

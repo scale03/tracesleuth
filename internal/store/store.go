@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite" // pure-Go driver, no cgo
 
@@ -40,8 +41,20 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) migrate() error {
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	// Add columns introduced after the first schema so an index carried over from
+	// an earlier version gains them without a full rebuild. A duplicate-column
+	// error means the column is already there — expected, and ignored.
+	for _, alter := range []string{
+		`ALTER TABLE investigations ADD COLUMN environment TEXT`,
+	} {
+		if _, err := s.db.Exec(alter); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return nil
 }
 
 const schema = `
@@ -53,7 +66,8 @@ CREATE TABLE IF NOT EXISTS investigations (
   closed_at TEXT,
   hypothesis TEXT NOT NULL DEFAULT '',
   conclusion TEXT,
-  status TEXT NOT NULL          -- open | closed | aborted
+  status TEXT NOT NULL,         -- open | closed | aborted
+  environment TEXT              -- JSON event.Environment captured at open
 );
 
 CREATE TABLE IF NOT EXISTS probes (
@@ -89,6 +103,15 @@ func (s *Store) Apply(e event.Event) error {
 			ON CONFLICT(id) DO UPDATE SET
 			  agent_identity=excluded.agent_identity, host=excluded.host, opened_at=excluded.opened_at`,
 			e.InvestigationID, e.AgentIdentity, e.Host, e.TS)
+		return err
+
+	case event.EnvironmentCaptured:
+		var envJSON any
+		if e.Environment != nil {
+			b, _ := json.Marshal(e.Environment)
+			envJSON = string(b)
+		}
+		_, err := s.db.Exec(`UPDATE investigations SET environment=? WHERE id=?`, envJSON, e.InvestigationID)
 		return err
 
 	case event.HypothesisDeclared:
@@ -155,6 +178,7 @@ type Investigation struct {
 	Hypothesis    string
 	Conclusion    string
 	Status        string
+	Environment   *event.Environment
 	Probes        []Probe
 }
 
@@ -178,11 +202,11 @@ type Probe struct {
 // Get returns one investigation with its probes, or ok=false if not found.
 func (s *Store) Get(id string) (Investigation, bool, error) {
 	var inv Investigation
-	var closedAt, conclusion sql.NullString
+	var closedAt, conclusion, envJSON sql.NullString
 	err := s.db.QueryRow(`
-		SELECT id, agent_identity, host, opened_at, closed_at, hypothesis, conclusion, status
+		SELECT id, agent_identity, host, opened_at, closed_at, hypothesis, conclusion, status, environment
 		FROM investigations WHERE id=?`, id).
-		Scan(&inv.ID, &inv.AgentIdentity, &inv.Host, &inv.OpenedAt, &closedAt, &inv.Hypothesis, &conclusion, &inv.Status)
+		Scan(&inv.ID, &inv.AgentIdentity, &inv.Host, &inv.OpenedAt, &closedAt, &inv.Hypothesis, &conclusion, &inv.Status, &envJSON)
 	if err == sql.ErrNoRows {
 		return Investigation{}, false, nil
 	}
@@ -190,6 +214,12 @@ func (s *Store) Get(id string) (Investigation, bool, error) {
 		return Investigation{}, false, err
 	}
 	inv.ClosedAt, inv.Conclusion = closedAt.String, conclusion.String
+	if envJSON.Valid && envJSON.String != "" {
+		var en event.Environment
+		if json.Unmarshal([]byte(envJSON.String), &en) == nil {
+			inv.Environment = &en
+		}
+	}
 
 	probes, err := s.probesFor(id)
 	if err != nil {

@@ -13,7 +13,13 @@ import (
 func newSvc(t *testing.T) (*Service, string) {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := New(Config{DataDir: dir, Host: "test-host", Executor: exec.NewMock(), Catalog: catalog.Default()})
+	s, err := New(Config{
+		DataDir: dir, Host: "test-host", Executor: exec.NewMock(), Catalog: catalog.Default(),
+		// Deterministic environment so tests never shell out to the host.
+		CaptureEnv: func() event.Environment {
+			return event.Environment{Kernel: "6.1.0-test", Distro: "TestOS", Arch: "amd64", BpftraceVersion: "0.24.2", BTF: true, ProbeCount: 1234}
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +43,7 @@ func TestEndToEndChainReconstructable(t *testing.T) {
 		AttachPoints: []string{"tcp_connect"},
 		ScriptText:   "kprobe:tcp_connect { @start[tid] = nsecs; }",
 		DurationS:    30,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,9 +78,10 @@ func TestEndToEndChainReconstructable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("chain did not verify: %v", err)
 	}
-	// opened, hypothesis, proposed, decision, started, ended, closed = 7 lines.
-	if res.Lines != 7 {
-		t.Fatalf("expected 7 audit lines, got %d", res.Lines)
+	// opened, environment, hypothesis, proposed, decision, started, ended, closed
+	// = 8 lines.
+	if res.Lines != 8 {
+		t.Fatalf("expected 8 audit lines, got %d", res.Lines)
 	}
 }
 
@@ -90,7 +97,7 @@ func TestDeniedProbeDoesNotRun(t *testing.T) {
 		ScriptText:   `tracepoint:syscalls:sys_enter_read { printf("%d\n", pid); }`,
 		DurationS:    10,
 		FilterPID:    true,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +124,7 @@ func TestReindexReproducesState(t *testing.T) {
 	s.RunProbe(context.Background(), inv, ProbeRequest{
 		ProbeTypes: []string{"kprobe"}, AttachPoints: []string{"tcp_connect"},
 		ScriptText: "kprobe:tcp_connect { @=count(); }", DurationS: 20, FilterPID: true,
-	})
+	}, nil)
 	s.Close_(inv, "done")
 
 	before, _, _ := s.Store().Get(inv)

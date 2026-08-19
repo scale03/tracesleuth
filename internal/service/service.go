@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"tracesleuth/internal/catalog"
+	"tracesleuth/internal/cost"
+	"tracesleuth/internal/env"
 	"tracesleuth/internal/event"
 	"tracesleuth/internal/exec"
 	"tracesleuth/internal/output"
@@ -40,15 +43,40 @@ type Config struct {
 	// Policy is the OPA decision engine. If nil, New builds one from the embedded
 	// policy and Catalog.AsData() — the built-in default-allow + deny-list posture.
 	Policy *policy.Engine
+	// CaptureEnv returns the host environment recorded as a chain event at open.
+	// If nil, New installs a best-effort inspector of the real host; tests inject
+	// a deterministic stub.
+	CaptureEnv func() event.Environment
+	// Metrics receives operational counters and timings. If nil, a no-op is used,
+	// so the CLI and tests need no wiring; the daemon backs it with Prometheus.
+	Metrics Metrics
 }
 
-// Service is safe for sequential CLI use; concurrent investigations get their
-// own append log so their chains never interleave.
+// Metrics receives operational signals from the pipeline. Implementations must
+// be safe for concurrent use.
+type Metrics interface {
+	InvestigationOpened()
+	ProbeDecided(decision string)  // "allow" or "deny"
+	ProbeObserved(d time.Duration) // a probe that actually ran
+	ProbeRunning(delta int)        // +1 when a probe attaches, -1 when it ends
+}
+
+type noopMetrics struct{}
+
+func (noopMetrics) InvestigationOpened()        {}
+func (noopMetrics) ProbeDecided(string)         {}
+func (noopMetrics) ProbeObserved(time.Duration) {}
+func (noopMetrics) ProbeRunning(int)            {}
+
+// Service ties the audit log, policy, executor, and index together. The daemon
+// serves concurrent connections, so writes are serialized: recordMu guards the
+// append-then-project step that must stay atomic per event.
 type Service struct {
-	cfg     Config
-	logsDir string
-	outDir  string
-	store   *store.Store
+	cfg      Config
+	logsDir  string
+	outDir   string
+	store    *store.Store
+	recordMu sync.Mutex
 }
 
 // PolicyFromEnv loads the catalog (TRACESLEUTH_CATALOG, JSON) and policy module
@@ -113,16 +141,25 @@ func New(cfg Config) (*Service, error) {
 		}
 		cfg.Policy = eng
 	}
+	if cfg.CaptureEnv == nil {
+		useSudo := os.Getenv("TRACESLEUTH_EXECUTOR") != "mock"
+		cfg.CaptureEnv = func() event.Environment { return env.Capture("", useSudo) }
+	}
+	if cfg.Metrics == nil {
+		cfg.Metrics = noopMetrics{}
+	}
 	return &Service{cfg: cfg, logsDir: logsDir, outDir: outDir, store: st}, nil
 }
 
-func (s *Service) Close() error { return s.store.Close() }
-func (s *Service) Store() *store.Store { return s.store }
+func (s *Service) Close() error             { return s.store.Close() }
+func (s *Service) Store() *store.Store      { return s.store }
 func (s *Service) Catalog() catalog.Catalog { return s.cfg.Catalog }
 
 // openLog returns the append log for an investigation, appends the event, and
 // projects it into the index — the two writes that must always happen together.
 func (s *Service) record(id string, e event.Event) (event.Event, error) {
+	s.recordMu.Lock()
+	defer s.recordMu.Unlock()
 	lg, err := event.OpenLog(s.logsDir, id)
 	if err != nil {
 		return event.Event{}, err
@@ -139,16 +176,25 @@ func (s *Service) record(id string, e event.Event) (event.Event, error) {
 	return written, nil
 }
 
-// Open starts a new investigation and returns its id.
+// Open starts a new investigation and returns its id. The host environment is
+// captured as its own chain event immediately after, so every finding is bound
+// to the kernel and bpftrace that produced it.
 func (s *Service) Open(id Identity) (string, error) {
 	invID := "inv_" + randID(4)
-	_, err := s.record(invID, event.Event{
+	if _, err := s.record(invID, event.Event{
 		Event:         event.InvestigationOpened,
 		AgentIdentity: id.Name,
 		IdentityRoles: id.Roles,
 		Host:          s.cfg.Host,
-	})
-	return invID, err
+	}); err != nil {
+		return invID, err
+	}
+	envInfo := s.cfg.CaptureEnv()
+	if _, err := s.record(invID, event.Event{Event: event.EnvironmentCaptured, Environment: &envInfo}); err != nil {
+		return invID, err
+	}
+	s.cfg.Metrics.InvestigationOpened()
+	return invID, nil
 }
 
 // Hypothesis records what the investigation is testing.
@@ -191,16 +237,36 @@ type ProbeReport struct {
 	OutputPath      string
 }
 
+// ProbeProgress is a stage transition inside RunProbe. The run is synchronous,
+// so without this a caller sees nothing between the request and the final result;
+// a transport can pass a callback to surface live progress (the MCP server turns
+// these into progress notifications).
+type ProbeProgress struct {
+	Stage   string // validating | policy | attaching | capturing | flushing | done | denied
+	Message string
+}
+
 // RunProbe executes the full per-probe pipeline: propose → dry-run → policy →
 // (if allowed) run → capture. Every stage is logged, including denials. A denied
 // probe returns a report with the actionable reasons and Ran=false; nothing
-// touches the kernel.
-func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) (ProbeReport, error) {
+// touches the kernel. progress may be nil; when set it is called at each stage.
+func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest, progress func(ProbeProgress)) (ProbeReport, error) {
+	emit := func(stage, msg string) {
+		if progress != nil {
+			progress(ProbeProgress{Stage: stage, Message: msg})
+		}
+	}
 	if req.DurationS == 0 {
 		req.DurationS = s.cfg.Catalog.DefaultDuration
 	}
 	probeID := "p_" + randID(3)
 	rep := ProbeReport{InvestigationID: invID, ProbeID: probeID, ScriptText: req.ScriptText}
+	// Count the decision once, whichever branch reaches it.
+	defer func() {
+		if rep.Decision != "" {
+			s.cfg.Metrics.ProbeDecided(rep.Decision)
+		}
+	}()
 
 	// 1. probe_proposed — the exact script, stored inline.
 	if _, err := s.record(invID, event.Event{
@@ -218,16 +284,19 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	spec := exec.Spec{ProbeID: probeID, ScriptText: req.ScriptText, Duration: time.Duration(req.DurationS) * time.Second}
 
 	// 2. dry-run (cheap parse check) before policy, per the plan's ordering.
+	emit("validating", "dry-run parse check")
 	if err := s.cfg.Executor.DryRun(ctx, spec); err != nil {
 		reason := fmt.Sprintf("script failed validation (%s): %v", s.cfg.Executor.Name(), err)
 		if _, e := s.recordDecision(invID, probeID, false, []string{reason}); e != nil {
 			return rep, e
 		}
 		rep.Decision, rep.Reasons = "deny", []string{reason}
+		emit("denied", reason)
 		return rep, nil
 	}
 
 	// 3. policy decision, evaluated against live investigation/host context.
+	emit("policy", "evaluating against posture")
 	in := policy.Input{
 		Action: policy.Action{
 			ProbeTypes:   req.ProbeTypes,
@@ -256,11 +325,18 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	}
 	rep.Decision, rep.Reasons = dec.Verdict(), dec.Reasons
 	if !dec.Allow {
+		emit("denied", firstReason(dec.Reasons))
 		return rep, nil // denied: nothing runs
 	}
 
-	// 4. execute.
+	// 4. execute. attaching then capturing bracket the one blocking call, so the
+	// last thing a watcher sees during the capture window is "capturing".
+	emit("attaching", "attaching probe to the kernel")
+	emit("capturing", fmt.Sprintf("capturing for up to %ds", req.DurationS))
+	s.cfg.Metrics.ProbeRunning(1)
 	res, runErr := s.cfg.Executor.Run(ctx, spec)
+	s.cfg.Metrics.ProbeRunning(-1)
+	s.cfg.Metrics.ProbeObserved(res.Ended.Sub(res.Started))
 
 	// 5. probe_started (recorded with the real start time + pid) then probe_ended.
 	if _, err := s.record(invID, event.Event{
@@ -269,6 +345,7 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 		return rep, err
 	}
 
+	emit("flushing", "writing captured output")
 	outPath := filepath.Join("outputs", invID, probeID+".log")
 	absOut := filepath.Join(s.cfg.DataDir, outPath)
 	if err := os.MkdirAll(filepath.Dir(absOut), 0o750); err != nil {
@@ -296,7 +373,71 @@ func (s *Service) RunProbe(ctx context.Context, invID string, req ProbeRequest) 
 	rep.TimedOut = res.TimedOut
 	rep.Summary = output.Summarize(res.Output)
 	rep.OutputPath = outPath
+	emit("done", "capture complete")
 	return rep, runErr
+}
+
+// firstReason returns the leading policy reason, or a generic denial note.
+func firstReason(reasons []string) string {
+	if len(reasons) > 0 {
+		return reasons[0]
+	}
+	return "denied by policy"
+}
+
+// PreviewReport is what preview_probe returns: the same decision run_probe would
+// reach, plus a cost estimate, without running anything or writing to the chain.
+type PreviewReport struct {
+	InvestigationID string
+	ScriptText      string
+	Decision        string // allow | deny
+	Reasons         []string
+	Estimate        cost.Estimate
+}
+
+// PreviewProbe runs dry-run + policy and estimates cost, but never executes and
+// never records — it exists so a human can see and approve exactly what would
+// run first. invID is optional: when set, the decision reflects that
+// investigation's context (the first-probe rule keys off its prior probe count);
+// when empty, the probe is evaluated as if it were the first in a new one.
+func (s *Service) PreviewProbe(ctx context.Context, invID string, req ProbeRequest) (PreviewReport, error) {
+	if req.DurationS == 0 {
+		req.DurationS = s.cfg.Catalog.DefaultDuration
+	}
+	rep := PreviewReport{
+		InvestigationID: invID,
+		ScriptText:      req.ScriptText,
+		Estimate:        cost.Of(s.cfg.Catalog, req.AttachPoints, req.ScriptText, req.FilterPID, req.FilterComm),
+	}
+
+	spec := exec.Spec{ProbeID: "preview", ScriptText: req.ScriptText, Duration: time.Duration(req.DurationS) * time.Second}
+	if err := s.cfg.Executor.DryRun(ctx, spec); err != nil {
+		rep.Decision = "deny"
+		rep.Reasons = []string{fmt.Sprintf("script failed validation (%s): %v", s.cfg.Executor.Name(), err)}
+		return rep, nil
+	}
+
+	in := policy.Input{
+		Action: policy.Action{
+			ProbeTypes:   req.ProbeTypes,
+			AttachPoints: req.AttachPoints,
+			ScriptText:   req.ScriptText,
+			DurationS:    req.DurationS,
+			Filters:      policy.Filters{PID: req.FilterPID, Comm: req.FilterComm},
+		},
+		Context: policy.Context{
+			ProbeCount:    s.priorProbeCount(invID, ""),
+			RunningOnHost: s.runningOnHost(),
+		},
+	}
+	dec, err := s.cfg.Policy.Evaluate(ctx, in)
+	if err != nil {
+		rep.Decision = "deny"
+		rep.Reasons = []string{fmt.Sprintf("policy evaluation error: %v", err)}
+		return rep, nil
+	}
+	rep.Decision, rep.Reasons = dec.Verdict(), dec.Reasons
+	return rep, nil
 }
 
 func (s *Service) recordDecision(invID, probeID string, allow bool, reasons []string) (event.Event, error) {

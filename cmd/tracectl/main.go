@@ -198,7 +198,7 @@ func cmdProbe(args []string) error {
 		DurationS:    *duration,
 		FilterPID:    *filterPID,
 		FilterComm:   *filterComm,
-	})
+	}, nil)
 	if err != nil {
 		return err
 	}

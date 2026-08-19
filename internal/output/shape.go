@@ -25,6 +25,18 @@ type Summary struct {
 	Text      string // what to show inline
 	Truncated bool   // whether Text omits some of the raw output
 	RawBytes  int    // size of the full captured output
+	// Aggregations are the colon-delimited @maps parsed from the full output,
+	// used to render a bar chart alongside the raw text.
+	Aggregations []Aggregation
+}
+
+// Chart renders the parsed aggregations as bar charts, or "" if the probe
+// produced no colon-delimited @map (a raw per-event stream or a bare histogram).
+func (s Summary) Chart() string {
+	if len(s.Aggregations) == 0 {
+		return ""
+	}
+	return renderBars(s.Aggregations)
 }
 
 // Summarize returns a bounded, representative view of raw output. Aggregated
@@ -34,6 +46,9 @@ type Summary struct {
 func Summarize(raw []byte) Summary {
 	s := Summary{RawBytes: len(raw)}
 	text := string(raw)
+	// Parse aggregations from the full output before truncation — @maps are small
+	// and we want the chart to reflect every key, not just the head+tail window.
+	s.Aggregations = parseAggregations(text)
 
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
 	if len(lines) > headLines+tailLines+1 {

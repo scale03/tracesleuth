@@ -1,25 +1,22 @@
-<br>
+<pre>
+████████╗██████╗  █████╗  ██████╗███████╗
+╚══██╔══╝██╔══██╗██╔══██╗██╔════╝██╔════╝
+   ██║   ██████╔╝███████║██║     █████╗
+   ██║   ██╔══██╗██╔══██║██║     ██╔══╝
+   ██║   ██║  ██║██║  ██║╚██████╗███████╗
+   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚══════╝
+ ███████╗██╗     ███████╗██╗   ██╗████████╗██╗  ██╗
+ ██╔════╝██║     ██╔════╝██║   ██║╚══██╔══╝██║  ██║
+ ███████╗██║     █████╗  ██║   ██║   ██║   ███████║
+ ╚════██║██║     ██╔══╝  ██║   ██║   ██║   ██╔══██║
+ ███████║███████╗███████╗╚██████╔╝   ██║   ██║  ██║
+ ╚══════╝╚══════╝╚══════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
 
-  <pre>
+  Auditable AI-driven bpftrace investigations with historical context for the Linux runtime.
+</pre>
 
- <br> 
-                                                                           
-████████╗██████╗  █████╗   ██████╗ ███████╗ ███████╗ ██╗      ███████╗ ██╗   ██╗ ████████╗ ██╗  ██╗
-╚══██╔══╝██╔══██╗██╔══██╗ ██╔════╝ ██╔════╝ ██╔════╝ ██║      ██╔════╝ ██║   ██║ ╚══██╔══╝ ██║  ██║
-   ██║   ██████╔╝███████║ ██║      █████╗   ███████╗ ██║      █████╗   ██║   ██║    ██║    ███████║
-   ██║   ██╔══██╗██╔══██║ ██║      ██╔══╝   ╚════██║ ██║      ██╔══╝   ██║   ██║    ██║    ██╔══██║
-   ██║   ██║  ██║██║  ██║ ╚██████╗ ███████╗ ███████║ ███████╗ ███████╗ ╚██████╔╝    ██║    ██║  ██║
-   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝  ╚═════╝ ╚══════╝ ╚══════╝ ╚══════╝ ╚══════╝  ╚═════╝     ╚═╝    ╚═╝  ╚═╝
-    Auditable AI-driven bpftrace investigations with historical context for the Linux runtime.                                                                              
- </pre>
-
-
-
-<br>
-
-
-An internal tool where an agent runs bpftrace-based investigations, and at any
-point later a human can answer, with zero ambiguity:
+An agent runs bpftrace-based investigations on a host; at any point later a human
+can answer, with zero ambiguity:
 
 - What hypothesis was being tested?
 - What exact eBPF script was loaded, on which host, by whom?
@@ -27,50 +24,50 @@ point later a human can answer, with zero ambiguity:
 - What happened when it ran — duration, exit code, output?
 
 **Traceability is the product, not a side feature.** Every meaningful step is
-written to an append-only, hash-chained JSONL log (the source of truth); a
-SQLite index is a disposable projection rebuilt from it for fast queries.
+written to an append-only, hash-chained JSONL log (the source of truth); a SQLite
+index is a disposable projection rebuilt from it for fast queries.
 
-Status: **single-host core working, driveable via MCP** — Phases 0, 1, 3
-(embedded policy), 6, 8, plus output-shaping, the discovery catalog, an **MCP
-server**, and the Phase 2 **`IdentityResolver`** seam with SSH + mTLS resolvers
-(a live Teleport cluster is a deployment step). Async baselines (Phase 7) are
-designed but not built. See [`docs/architecture.md`](docs/architecture.md) for
-the full picture, [`docs/mcp.md`](docs/mcp.md) to drive it from an agent, and
-[`docs/status.md`](docs/status.md) for the phase-by-phase state.
+## Status
 
-## Use it from an agent (MCP)
+Single-host core works and is driveable over MCP. Investigations open, run
+policy-gated probes, and close with a recap card naming the environment they ran
+on; every step is on the hash chain. A long-lived `tracesleuthd` owns the data and
+exposes `/metrics`; agents reach it over a Unix socket through an ephemeral relay.
+Identity comes from the transport (SSH today, mTLS coded), never from the client.
 
-The intended interface is the MCP server (`cmd/tracesleuth-mcp`): an agent calls
-`list_probe_catalog`, `open_investigation`, `run_probe`, `close_investigation`.
-It runs on the Linux host and is launched over SSH; identity is derived from the
-transport, not trusted from the client. See [`docs/mcp.md`](docs/mcp.md).
+Not built yet: baselines (async diffs), Kubernetes deployment, cgroup resource
+guards. See [`docs/status.md`](docs/status.md) for the phase-by-phase state.
 
-## What's here
+## How it runs
 
-| Component | Package | Role |
-|---|---|---|
-| Audit contract | `internal/event` | JSONL events, hash chain, verifier |
-| Policy | `internal/policy` + `policy/*.rego` | allow-list, duration, aggregation & scoping rules |
-| Probe catalog | `internal/catalog` | single source for what's allowed / high-frequency |
-| Execution | `internal/exec` | `Executor` iface: real bpftrace (Linux) or mock |
-| Index | `internal/store` | SQLite projection, rebuildable from JSONL |
-| Orchestration | `internal/service` | hypothesis → probe → policy → result flow |
-| Transport/identity | `internal/transport` | `IdentityResolver`: SSH + mTLS, one Teleport CA |
-| MCP server | `cmd/tracesleuth-mcp` | agent-facing tool surface over stdio JSON-RPC |
-| CLIs | `cmd/tracectl`, `cmd/verify-chain` | drive investigations; verify the chain |
+```
+agent ──ssh──▶ tracesleuth-mcp -connect …   (ephemeral, runs as the ssh user)
+                        │ Unix socket (SO_PEERCRED = identity)
+                        ▼
+                 tracesleuthd (systemd, user: tracesleuth)
+                 ├─ /var/lib/tracesleuth      JSONL audit log + SQLite index
+                 ├─ sudo → /usr/bin/bpftrace  scoped — the only privilege
+                 └─ 127.0.0.1:9464            /healthz, /metrics
+```
 
-## Quickstart (single host)
+The agent never runs the daemon or bpftrace directly. It speaks MCP to the relay,
+which forwards to the socket; the daemon attributes the work to the ssh user's
+kernel-attested uid, so a client can't claim to be someone else. The MCP surface
+is the intended interface — `list_probe_catalog`, `open_investigation`,
+`preview_probe`, `run_probe`, `list_kernel_probes`, `close_investigation`,
+`show_investigation`. See [`docs/mcp.md`](docs/mcp.md).
 
-Requires Go 1.25+. bpftrace runs only on Linux and needs root; on any other host
-(or before you wire up sudo) set `TRACESLEUTH_EXECUTOR=mock` to use the
-deterministic fake backend — the audit log records that the mock ran, so a mock
-result is never mistaken for a real capture.
+## Try it without a host (mock)
+
+bpftrace needs Linux and root. To exercise the full open→probe→close flow and the
+hash chain on any machine, set `TRACESLEUTH_EXECUTOR=mock`: the audit log records
+that the mock ran, so a mock result is never mistaken for a real capture.
 
 ```sh
 go build -o bin/tracectl ./cmd/tracectl
 go build -o bin/verify-chain ./cmd/verify-chain
 
-export TRACESLEUTH_EXECUTOR=mock          # omit on a Linux host with real bpftrace
+export TRACESLEUTH_EXECUTOR=mock
 
 INV=$(bin/tracectl open --identity you@example --host $(hostname))
 bin/tracectl hypothesis --inv $INV --text "tcp_connect latency correlates with openat storms"
@@ -82,21 +79,50 @@ bin/tracectl show --inv $INV     # reconstruct the whole chain from the index
 bin/tracectl verify --all        # confirm the hash chain is intact
 ```
 
-`scripts/demo.sh` runs the entire flow (including a probe that policy denies) and
-`scripts/tamper_test.sh` proves the chain detects edits and deletions.
+`scripts/demo.sh` runs the entire flow (including a probe policy denies) and
+`scripts/tamper_test.sh` proves the chain detects edits and deletions. Requires Go
+1.25+.
 
-### Running real bpftrace (Linux)
+## Deploy on a host
 
-bpftrace requires root. Grant a scoped, passwordless sudo rule for exactly that
-binary — nothing else is elevated:
+`deploy/install.sh` builds the binaries, creates the `tracesleuth` system user,
+installs the systemd unit and the scoped sudoers rule, and starts the service.
+Full walkthrough — connecting an agent, configuration, metrics, uninstall — in
+[`deploy/README.md`](deploy/README.md). Copy `.mcp.json.example` to `.mcp.json`
+and edit it for your host.
 
-```sh
-echo 'YOURUSER ALL=(root) NOPASSWD: /usr/bin/bpftrace' | sudo tee /etc/sudoers.d/tracesleuth
-sudo chmod 440 /etc/sudoers.d/tracesleuth
+Running real bpftrace needs a passwordless sudo rule scoped to exactly that
+binary; the installer sets it up, and nothing else is elevated:
+
+```
+tracesleuth ALL=(root) NOPASSWD: /usr/bin/bpftrace
 ```
 
-Then run without `TRACESLEUTH_EXECUTOR=mock`; the daemon auto-selects the real
-bpftrace backend when the binary is present.
+## What's here
+
+| Component | Package | Role |
+|---|---|---|
+| Audit contract | `internal/event` | JSONL events, hash chain, verifier |
+| Policy | `internal/policy` + `policy/*.rego` | allow-list, duration, aggregation & scoping rules |
+| Probe catalog | `internal/catalog` | single source for what's allowed / high-frequency |
+| Execution | `internal/exec` | `Executor` iface: real bpftrace (Linux) or mock |
+| Index | `internal/store` | SQLite projection, rebuildable from JSONL |
+| Orchestration | `internal/service` | hypothesis → probe → policy → result flow |
+| Transport/identity | `internal/transport` | `IdentityResolver`: SSH + mTLS, one CA |
+| Daemon | `cmd/tracesleuthd` | long-lived owner of the data; MCP over UDS, `/metrics` |
+| MCP server | `cmd/tracesleuth-mcp` | agent-facing tools over stdio JSON-RPC; relay or in-process |
+| CLIs | `cmd/tracectl`, `cmd/verify-chain` | drive investigations; verify the chain |
+
+## Docs
+
+- [`docs/architecture.md`](docs/architecture.md) — the design, end to end.
+- [`docs/mcp.md`](docs/mcp.md) — driving it from an agent over MCP.
+- [`docs/status.md`](docs/status.md) — honest phase-by-phase state.
+- [`deploy/README.md`](deploy/README.md) — standalone host deployment.
+- [`deploy/policy/README.md`](deploy/policy/README.md) — the on-disk policy/catalog and posture.
+- [`deploy/teleport/README.md`](deploy/teleport/README.md) — the Teleport (`tsh`) transport.
+- [`SECURITY.md`](SECURITY.md) — threat model and the privilege boundary.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — build, test, and the house style.
 
 ## Development
 
