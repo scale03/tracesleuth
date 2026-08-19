@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"strings"
 	"time"
 )
@@ -51,6 +52,37 @@ func (m *MockExecutor) Run(ctx context.Context, s Spec) (Result, error) {
 		TimedOut: timedOut,
 		Pid:      os.Getpid(),
 	}, nil
+}
+
+// mockProbes is a small, representative slice of what `bpftrace -l` returns, so
+// discovery has something plausible to page through off a real kernel.
+var mockProbes = []string{
+	"tracepoint:syscalls:sys_enter_openat",
+	"tracepoint:syscalls:sys_enter_read",
+	"tracepoint:syscalls:sys_enter_write",
+	"tracepoint:sched:sched_switch",
+	"tracepoint:sched:sched_process_exec",
+	"tracepoint:block:block_rq_issue",
+	"tracepoint:block:block_rq_complete",
+	"kprobe:tcp_connect",
+	"kprobe:tcp_retransmit_skb",
+	"kprobe:vfs_unlink",
+}
+
+// List returns the mock probe set narrowed by a bpftrace-style glob. The match is
+// approximate (path.Match over the whole string), enough for development and
+// tests; the real backend defers to bpftrace's own globbing.
+func (m *MockExecutor) List(_ context.Context, filter string) ([]string, error) {
+	if filter == "" || filter == "*" {
+		return append([]string(nil), mockProbes...), nil
+	}
+	var out []string
+	for _, p := range mockProbes {
+		if ok, _ := path.Match(filter, p); ok {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 // synthOutput returns aggregated-looking output if the script aggregates, and a

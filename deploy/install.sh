@@ -44,7 +44,9 @@ visudo -c -f "$SUDOERS" >/dev/null || die "sudoers validation failed; removed no
 echo "==> installing systemd unit"
 install -m 0644 "$REPO/deploy/systemd/tracesleuthd.service" "$UNIT"
 systemctl daemon-reload
-systemctl enable --now tracesleuthd
+systemctl enable tracesleuthd
+# restart (not just start) so re-running the installer picks up a new binary.
+systemctl restart tracesleuthd
 
 echo
 echo "tracesleuthd is running. Check it with:"

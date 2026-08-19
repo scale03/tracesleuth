@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -63,6 +65,33 @@ func (b *Bpftrace) DryRun(ctx context.Context, s Spec) error {
 		return fmt.Errorf("bpftrace dry-run failed: %v: %s", err, stderr.String())
 	}
 	return nil
+}
+
+// List enumerates the host's probes via `bpftrace -l`, narrowed by a probe glob.
+// Listing reads the kernel's tracing metadata (and needs the same privilege as a
+// run), so it goes through the same sudo path; it attaches to nothing. Results
+// are sorted for stable pagination.
+func (b *Bpftrace) List(ctx context.Context, filter string) ([]string, error) {
+	if filter == "" {
+		filter = "*"
+	}
+	name, args := b.argv("-l", filter)
+	cmd := exec.CommandContext(ctx, name, args...)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("bpftrace -l failed: %v: %s", err, errb.String())
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	probes := lines[:0]
+	for _, ln := range lines {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			probes = append(probes, ln)
+		}
+	}
+	sort.Strings(probes)
+	return probes, nil
 }
 
 // Run executes the script and returns its captured output. The Spec.Duration is

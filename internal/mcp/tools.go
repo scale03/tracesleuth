@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"tracesleuth/internal/catalog"
@@ -28,6 +29,15 @@ func toolSpecs() []map[string]any {
 			"name":        "list_probe_catalog",
 			"description": "List allowed probe types and attach points, grouped by category, with which are high-frequency (require an aggregation like count/sum/hist/@map instead of raw per-event output) and the duration limits. Call this before writing a script.",
 			"inputSchema": obj(map[string]any{}),
+		},
+		{
+			"name":        "list_kernel_probes",
+			"description": "List the probes this host actually exposes (live `bpftrace -l`), narrowed by a probe glob and paged. This is discovery of everything the kernel has — a wider net than list_probe_catalog's curated set. Use a filter to stay focused (\"tracepoint:*\" for all tracepoints, \"kprobe:tcp*\" for TCP kprobes, \"tracepoint:syscalls:*\" for syscalls); the host exposes thousands, so results are capped — page with offset.",
+			"inputSchema": obj(map[string]any{
+				"filter": merge(str, map[string]any{"description": "bpftrace probe glob, e.g. \"tracepoint:*\" or \"kprobe:tcp*\"; omit for everything"}),
+				"offset": map[string]any{"type": "integer", "description": "index of the first result (for paging); default 0"},
+				"limit":  map[string]any{"type": "integer", "description": "max results to return; default 100"},
+			}),
 		},
 		{
 			"name":        "open_investigation",
@@ -113,6 +123,8 @@ func (s *Server) callTool(params json.RawMessage) map[string]any {
 	switch p.Name {
 	case "list_probe_catalog":
 		return textResult(renderCatalog(s.svc.Catalog()), false)
+	case "list_kernel_probes":
+		return s.toolListKernelProbes(p.Arguments)
 	case "open_investigation":
 		return s.toolOpen(p.Arguments)
 	case "run_probe":
@@ -126,6 +138,42 @@ func (s *Server) callTool(params json.RawMessage) map[string]any {
 	default:
 		return textResult("unknown tool: "+p.Name, true)
 	}
+}
+
+func (s *Server) toolListKernelProbes(args json.RawMessage) map[string]any {
+	var a struct {
+		Filter string `json:"filter"`
+		Offset int    `json:"offset"`
+		Limit  int    `json:"limit"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return textResult("bad arguments: "+err.Error(), true)
+	}
+	listing, err := s.svc.ListKernelProbes(ctx(), a.Filter, a.Offset, a.Limit)
+	if err != nil {
+		return textResult("list_kernel_probes failed: "+err.Error(), true)
+	}
+	return textResult(renderListing(listing), false)
+}
+
+// renderListing formats one page of host probe discovery, ending with a paging
+// hint when more remain.
+func renderListing(l service.ProbeListing) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d probes match %q", l.Total, l.Filter)
+	if l.Total == 0 {
+		b.WriteString("\n(no probe on this host matches — check the glob, e.g. \"tracepoint:*\")")
+		return b.String()
+	}
+	fmt.Fprintf(&b, " — showing %d–%d\n\n", l.Offset+1, l.Offset+len(l.Probes))
+	for _, p := range l.Probes {
+		b.WriteString(p)
+		b.WriteByte('\n')
+	}
+	if l.HasMore() {
+		fmt.Fprintf(&b, "\n… %d more. Page with offset=%d.", l.Total-(l.Offset+len(l.Probes)), l.Offset+len(l.Probes))
+	}
+	return b.String()
 }
 
 func (s *Server) toolOpen(args json.RawMessage) map[string]any {

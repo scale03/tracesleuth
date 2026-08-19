@@ -42,4 +42,8 @@ type Executor interface {
 	DryRun(ctx context.Context, s Spec) error
 	// Name identifies the backend for logging.
 	Name() string
+	// List enumerates the probes the host exposes, optionally narrowed by a
+	// bpftrace probe glob (e.g. "tracepoint:*", "kprobe:tcp*"). An empty filter
+	// lists everything. This is discovery — it attaches to nothing.
+	List(ctx context.Context, filter string) ([]string, error)
 }
