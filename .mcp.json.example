@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tracesleuth": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "USER@HOST",
+        "/usr/local/bin/tracesleuth-mcp -connect /run/tracesleuth/tracesleuth.sock"
+      ]
+    }
+  }
+}

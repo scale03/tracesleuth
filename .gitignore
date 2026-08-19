@@ -5,3 +5,7 @@ TraceSleuth.md
 *.db
 *.db-*
 /bin/
+
+# Local MCP client config carries machine-specific paths and host/identity; each
+# developer copies .mcp.json.example to .mcp.json and edits it for their setup.
+.mcp.json
