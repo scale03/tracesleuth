@@ -13,11 +13,12 @@
  ╚════██║██║     ██╔══╝  ██║   ██║   ██║   ██╔══██║
  ███████║███████╗███████╗╚██████╔╝   ██║   ██║  ██║
  ╚══════╝╚══════╝╚══════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
+ Auditable, Policy-gated Bpftrace Investigations for Ai Agents, with historical-context.
 </pre>
 
-### Auditable, policy-gated eBPF investigations an AI agent can run — and a human can trust.
 
-**Every probe is checked before it loads, recorded on a tamper-evident chain, and answerable months later.**
+
+
 
 [![CI](https://img.shields.io/badge/CI-passing-3fb950?logo=githubactions&logoColor=white)](https://github.com/scale03/tracesleuth/actions)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
@@ -30,9 +31,8 @@
 
 ---
 
-TraceSleuth lets an agent investigate a Linux host with real eBPF — "why is this
-service stalling?", "who is deleting these files?", "what's retransmitting?" — and
-guarantees that at **any point later** a human can answer, with zero ambiguity:
+Let an agent deep-dive a Linux host with bpftrace — catching what userspace misses: "which ephemeral container just injected a suspicious kernel module?", "who is silently poisoning the inode cache?", or "why is this thread suddenly making outbound syscalls?"
+and guarantees that at any point later, a human can answer, with zero ambiguity:
 
 - 🔬 **What hypothesis** was being tested?
 - 📜 **What exact bpftrace script** loaded, on which host, run by whom?
