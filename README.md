@@ -1,43 +1,17 @@
-<div align="center">
+# tracesleauth
 
-<pre>
-████████╗██████╗   █████╗   ██████╗███████╗
-╚══██╔══╝██╔══██╗ ██╔══██╗ ██╔════╝██╔════╝
- ██║   ██████╔╝ ███████║ ██║     █████╗
- ██║   ██╔══██╗ ██╔══██║ ██║     ██╔══╝
-   ██║   ██║  ██║ ██║  ██║ ╚██████╗███████╗
-    ╚═╝   ╚═╝  ╚═╝ ╚═╝  ╚═╝  ╚═════╝ ╚══════╝
- ███████╗██╗     ███████╗██╗   ██╗████████╗██╗  ██╗
- ██╔════╝██║     ██╔════╝██║   ██║╚══██╔══╝██║  ██║
- ███████╗██║     █████╗  ██║   ██║   ██║   ███████║
- ╚════██║██║     ██╔══╝  ██║   ██║   ██║   ██╔══██║
- ███████║███████╗███████╗╚██████╔╝   ██║   ██║  ██║
- ╚══════╝╚══════╝╚══════╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝
- Auditable, Policy-gated Bpftrace Investigations for Ai Agents, with historical-context.
-</pre>
-
-
-
-
+Auditable, policy-gated bpftrace investigations for Ai Agents, let coding agents safely deep-dive Linux with bpftrace. OPA policies block rogue probes, while a hash chain locks down the historical context of every investigation.
 
 [![CI](https://img.shields.io/badge/CI-passing-3fb950?logo=githubactions&logoColor=white)](https://github.com/scale03/tracesleuth/actions)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 [![eBPF](https://img.shields.io/badge/powered_by-bpftrace-f34b7d)](https://github.com/bpftrace/bpftrace)
+![Powered by OPA](https://img.shields.io/badge/Powered%20by-OPA-1a1a1a?style=flat-square&logo=open-policy-agent&logoColor=white)
 [![MCP](https://img.shields.io/badge/interface-MCP-6f42c1)](docs/mcp.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
-</div>
 
 ---
-
-Let an agent deep-dive a Linux host with bpftrace — catching what userspace misses: "which ephemeral container just injected a suspicious kernel module?", "who is silently poisoning the inode cache?", or "why is this thread suddenly making outbound syscalls?"
-and guarantees that at any point later, a human can answer, with zero ambiguity:
-
-- 🔬 **What hypothesis** was being tested?
-- 📜 **What exact bpftrace script** loaded, on which host, run by whom?
-- 🛂 **What did policy decide**, and why?
-- ⏱️ **What happened when it ran** — duration, exit code, output?
 
 
 ## Contents
@@ -59,7 +33,7 @@ equal measure. bpftrace can read anything the kernel sees; an unbounded probe ca
 flood a box; and when something *did* run, there's usually no durable answer to
 "what exactly, and who let it?"
 
-TraceSleuth keeps the power and removes the terror:
+Keep the power and removes the terror:
 
 - The agent never gets a shell and never runs bpftrace directly.
 - Every script passes a **policy gate** — allow-list, duration caps, and an
@@ -72,15 +46,15 @@ TraceSleuth keeps the power and removes the terror:
 
 | | |
 |---|---|
-| 🛂 **Policy before kernel** | Rego/OPA-backed allow-list, duration limits, and mandatory aggregation on firehose probes — enforced before a probe loads, never after. |
-| 🔗 **Tamper-evident audit** | Append-only hash-chained JSONL is the source of truth; `verify-chain` proves it's intact. The SQLite index is rebuildable. |
-| 🤖 **MCP-native** | Purpose-built tool surface — `open`, `preview`, `run`, `close`, `discover` — so any MCP agent can drive it. Not a CLI wrapper. |
-| 👁️ **Preview before you commit** | `preview_probe` returns the dry-run, the policy decision, and a cost estimate with **zero execution and zero chain writes** — approve first, run second. |
-| 📇 **Identity from the transport** | Attribution is the caller's kernel-attested identity (SSH / `SO_PEERCRED`, mTLS coded). A client can't claim to be someone else. |
-| 📊 **Aggregations, rendered** | `@maps` come back as bar charts, histograms pass through — the shaped result fits in a chat window instead of drowning it. |
-| 🗺️ **Full Discovery** | A curated catalog of recommended attach points, plus live `bpftrace -l` for everything the host actually exposes. |
-| 📈 **Prometheus built in** | The daemon exposes `/metrics` and `/healthz` out of the box. |
-| 🧪 **Mock backend** | Exercise the entire flow — and the audit chain — on any machine, no Linux and no root. A mock result is recorded as such, never mistaken for a real capture. |
+| **Policy before kernel** | Rego/OPA-backed allow-list, duration limits, and mandatory aggregation on firehose probes — enforced before a probe loads, never after. |
+| **Tamper-evident audit** | Append-only hash-chained JSONL is the source of truth; `verify-chain` proves it's intact. The SQLite index is rebuildable. |
+| **MCP-native** | Purpose-built tool surface — `open`, `preview`, `run`, `close`, `discover` — so any MCP agent can drive it. Not a CLI wrapper. |
+| **Preview before you commit** | `preview_probe` returns the dry-run, the policy decision, and a cost estimate with **zero execution and zero chain writes** — approve first, run second. |
+| **Identity from the transport** | Attribution is the caller's kernel-attested identity (SSH / `SO_PEERCRED`, mTLS coded). A client can't claim to be someone else. |
+| **Aggregations, rendered** | `@maps` come back as bar charts, histograms pass through — the shaped result fits in a chat window instead of drowning it. |
+| **Full Discovery** | A curated catalog of recommended attach points, plus live `bpftrace -l` for everything the host actually exposes. |
+| **Prometheus built in** | The daemon exposes `/metrics` and `/healthz` out of the box. |
+| **Mock backend** | Exercise the entire flow — and the audit chain — on any machine, no Linux and no root. A mock result is recorded as such, never mistaken for a real capture. |
 
 ## How it works
 
