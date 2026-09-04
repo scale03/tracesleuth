@@ -1,9 +1,9 @@
 module tracesleuth
 
-go 1.25.0
+go 1.26.0
 
 require (
-	github.com/open-policy-agent/opa v1.19.1
+	github.com/open-policy-agent/opa v1.20.1
 	github.com/prometheus/client_golang v1.24.1
 	modernc.org/sqlite v1.56.0
 )
