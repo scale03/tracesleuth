@@ -1,4 +1,4 @@
-# tracesleauth
+# tracesleuth
 
 Auditable, policy-gated bpftrace investigations for Ai Agents, let coding agents safely deep-dive Linux with bpftrace. OPA policies block rogue probes, while a hash chain locks down the historical context of every investigation.
 
